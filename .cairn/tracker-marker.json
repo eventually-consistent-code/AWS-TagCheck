@@ -26,8 +26,8 @@
       "title": "REQ-04: Account guard for expected AWS account",
       "bodyHash": "192be4dfa32b92aa",
       "labels": [],
-      "state": "in_progress",
-      "updatedAt": "2026-07-29T07:00:27Z"
+      "state": "closed",
+      "updatedAt": "2026-07-29T07:00:35Z"
     },
     "5": {
       "title": "REQ-02: Replace boto with boto3 for EC2 enumeration",
