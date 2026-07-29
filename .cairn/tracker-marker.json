@@ -54,8 +54,8 @@
       "title": "REQ-05: EC2 tag compliance scan vs canonical.json",
       "bodyHash": "8cfd2ee73ad98180",
       "labels": [],
-      "state": "open",
-      "updatedAt": "2026-07-29T06:52:51Z"
+      "state": "closed",
+      "updatedAt": "2026-07-29T17:48:52Z"
     }
   },
   "phases": {
