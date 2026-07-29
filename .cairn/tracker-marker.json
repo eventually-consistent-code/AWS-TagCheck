@@ -1,0 +1,66 @@
+{
+  "lastScan": "2026-07-29T06:53:45.823Z",
+  "issues": {
+    "1": {
+      "title": "REQ-03: Credential validation pass/fail",
+      "bodyHash": "6192f2e282660d2b",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:51Z"
+    },
+    "2": {
+      "title": "REQ-01: Python 3 packaging and entrypoint",
+      "bodyHash": "34edbb8c6e4c2ba2",
+      "labels": [],
+      "state": "in_progress",
+      "updatedAt": "2026-07-29T06:58:00Z"
+    },
+    "3": {
+      "title": "REQ-07: Report polish — empty regions and stale copy",
+      "bodyHash": "c0f85f3ee94e399b",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:51Z"
+    },
+    "4": {
+      "title": "REQ-04: Account guard for expected AWS account",
+      "bodyHash": "192be4dfa32b92aa",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:52Z"
+    },
+    "5": {
+      "title": "REQ-02: Replace boto with boto3 for EC2 enumeration",
+      "bodyHash": "8987173ab2b5af38",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:51Z"
+    },
+    "6": {
+      "title": "REQ-06: HTML deviation report",
+      "bodyHash": "9c3ea17f9dea7504",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:51Z"
+    },
+    "7": {
+      "title": "REQ-08: Tests and lint green",
+      "bodyHash": "fd8c608eeabcc7d0",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:51Z"
+    },
+    "8": {
+      "title": "REQ-05: EC2 tag compliance scan vs canonical.json",
+      "bodyHash": "8cfd2ee73ad98180",
+      "labels": [],
+      "state": "open",
+      "updatedAt": "2026-07-29T06:52:51Z"
+    }
+  },
+  "phases": {
+    "1": "Phase 2: EC2 compliance scan",
+    "2": "Phase 1: Foundation & guards",
+    "3": "Phase 3: HTML report polish & quality"
+  }
+}

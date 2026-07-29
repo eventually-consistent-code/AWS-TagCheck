@@ -1,2 +1,1 @@
-boto
-PTable
+boto3>=1.34

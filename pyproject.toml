@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aws-tag-check"
+version = "0.1.0"
+description = "Compare AWS EC2 instance tags against a canonical Environment/Product list"
+readme = "README.txt"
+requires-python = ">=3.10"
+authors = [
+  { name = "John Reed" },
+  { name = "Nick Bitzer" },
+]
+dependencies = [
+  "boto3>=1.34",
+]
+
+[project.scripts]
+aws-tag-check = "aws_tag_check:main"
+
+[tool.setuptools]
+py-modules = ["aws_tag_check", "aws"]

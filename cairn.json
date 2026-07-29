@@ -1,0 +1,78 @@
+{
+  "$schema": "cairn 2.0 project config. tracker = your single source of truth for work items. Tokens come from env vars, never this file. Optional `user` block: {\"handle\": \"<your tracker username>\", \"mode\": \"vibe\"|\"engineer\"} — handle enables ownership tracking, mode picks the collaboration posture (vibe = cairn drives, engineer = you pair; default vibe). _alternatives below are example `tracker` blocks for the other supported backends — copy the one you want over the active `tracker` block above and delete `_alternatives`.",
+  "tracker": {
+    "type": "github",
+    "config": { "repo": "eventually-consistent-code/AWS-TagCheck" }
+  },
+  "_docs": {
+    "$comment": "Optional documentation connector — publishes README + docs/ as a page tree. Copy to `docs` to enable. Credentials come from env vars named here, never this file.",
+    "connector": "confluence",
+    "config": {
+      "baseUrl": "https://your-domain.atlassian.net/wiki",
+      "spaceKey": "DOCS",
+      "emailEnv": "CONFLUENCE_EMAIL",
+      "tokenEnv": "CONFLUENCE_API_TOKEN"
+    }
+  },
+  "agents": { "model": "auto" },
+  "continuity": {
+    "resume": "prompt",
+    "checkpoint": true,
+    "wipCommits": false,
+    "recallIndex": { "enabled": true, "maxCards": 20 }
+  },
+  "leakGuard": {
+    "enabled": true,
+    "allow": [],
+    "extraPatterns": []
+  },
+  "_alternatives": {
+    "gitlab": {
+      "type": "gitlab",
+      "config": {
+        "baseUrl": "https://gitlab.com",
+        "project": "owner/name",
+        "tokenEnv": "GITLAB_TOKEN",
+        "extraLabels": []
+      }
+    },
+    "jira": {
+      "type": "jira",
+      "config": {
+        "baseUrl": "https://your-domain.atlassian.net",
+        "projectKey": "PROJ",
+        "issueType": "Task",
+        "emailEnv": "JIRA_EMAIL",
+        "tokenEnv": "JIRA_API_TOKEN",
+        "transitions": { "in_progress": "In Progress", "closed": "Done" }
+      }
+    },
+    "asana": {
+      "type": "asana",
+      "config": {
+        "projectGid": "1234567890123456",
+        "tokenEnv": "ASANA_TOKEN"
+      }
+    },
+    "azure-boards": {
+      "type": "azure-boards",
+      "config": {
+        "orgUrl": "https://dev.azure.com/your-org",
+        "project": "your-project",
+        "workItemType": "Issue",
+        "patEnv": "AZURE_DEVOPS_PAT",
+        "apiVersion": "7.0",
+        "states": { "in_progress": "Doing", "closed": "Done", "open": "To Do" }
+      }
+    },
+    "clickup": {
+      "type": "clickup",
+      "config": {
+        "defaultListId": "900123456",
+        "spaceId": "90123456",
+        "tokenEnv": "CLICKUP_TOKEN",
+        "statuses": { "open": "to do", "in_progress": "in progress", "closed": "complete" }
+      }
+    }
+  }
+}

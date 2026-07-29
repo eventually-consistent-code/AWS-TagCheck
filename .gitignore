@@ -1,0 +1,11 @@
+
+# Grok MCP workaround: unexpanded CLAUDE_PROJECT_DIR from cairn .mcp.json
+${CLAUDE_PROJECT_DIR}
+
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+index.html
