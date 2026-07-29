@@ -9,6 +9,7 @@ Author(s): John Reed, Nick Bitzer
 
 
 # Imports
+import argparse
 import datetime
 import html
 import json
@@ -30,6 +31,8 @@ from aws import (
     list_ec2_regions,
     tags_to_dict,
     validate_credentials,
+    parse_csv_tags,
+    merge_tag_maps,
 )
 
 
@@ -282,8 +285,14 @@ def write_html_report(path, html_body):
 
 def main():
     """
-    Guards → load canonical → multi-region EC2 tag scan → HTML report → exit 0/1.
+    Guards → optional CSV import/merge → load canonical → multi-region EC2 tag scan → HTML report → exit codes.
     """
+    parser = argparse.ArgumentParser(description="AWS Tag Check with optional CSV gold-list merge")
+    parser.add_argument("--csv", help="Path to CSV with tag values (resource_id, tag_key, tag_value)")
+    parser.add_argument("--write-gold", action="store_true", help="Write merged gold-list.json (and conflicts.json)")
+    parser.add_argument("--gold-output", default="gold-list.json", help="Path to write gold-list JSON")
+    args = parser.parse_args()
+
     LOG.info("starting aws tag check...")
 
     session = build_session()
@@ -297,6 +306,36 @@ def main():
     if BAD_REGIONS:
         regions = [r for r in regions if r not in BAD_REGIONS]
     LOG.info("found %s region(s) to scan...", len(regions))
+
+    # Collect AWS tag map (resource_id -> {k:v}) for merge/preview
+    aws_tags_map = {}
+    aws_resources = 0
+    for region in regions:
+        for instance in iter_instances(session, region):
+            aws_resources += 1
+            rid = instance.get("InstanceId") or ""
+            aws_tags_map[rid] = tags_to_dict(instance)
+
+    csv_tags_map = {}
+    gold_map = {}
+    conflicts = []
+    if args.csv:
+        try:
+            csv_tags_map = parse_csv_tags(args.csv)
+        except FileNotFoundError:
+            LOG.error("csv file not found: %s", args.csv)
+            raise SystemExit(EXIT_CONFIG)
+        gold_map, conflicts = merge_tag_maps(aws_tags_map, csv_tags_map)
+        LOG.info("merged gold list for %s resources (%s conflict(s))", len(gold_map), len(conflicts))
+        if args.write_gold:
+            payload = {"gold": gold_map, "conflicts": conflicts}
+            with open(args.gold_output, "w", encoding="utf-8") as outf:
+                json.dump(payload, outf, indent=2)
+            LOG.info("gold list written: %s", args.gold_output)
+            # also write conflicts separately for convenience
+            with open("conflicts.json", "w", encoding="utf-8") as cf:
+                json.dump(conflicts, cf, indent=2)
+            LOG.info("conflicts written: conflicts.json")
 
     violations, region_skips, instances_seen = scan_all_regions(
         session, regions, canonical

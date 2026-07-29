@@ -10,6 +10,7 @@ Author(s): John Reed, Nick Bitzer
 # Imports
 import logging
 import os
+from collections import defaultdict
 
 import boto3
 from botocore.exceptions import (
@@ -242,3 +243,63 @@ def evaluate_required_tags(tag_map, canonical):
                 }
             )
     return findings
+
+
+def parse_csv_tags(path):
+    """
+    Parse a CSV file of tag entries. Expected columns: resource_id, tag_key, tag_value.
+    Returns a dict mapping resource_id -> { tag_key: tag_value }
+    """
+    import csv
+
+    tags = defaultdict(dict)
+    with open(path, encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        # Support common alternate header names
+        for row in reader:
+            rid = (row.get("resource_id") or row.get("instance_id") or row.get("resource") or "").strip()
+            key = (row.get("tag_key") or row.get("key") or "").strip()
+            value = (row.get("tag_value") or row.get("value") or "").strip()
+            if not rid or not key:
+                # skip malformed/empty rows
+                continue
+            tags[rid][key] = value
+    return dict(tags)
+
+
+def merge_tag_maps(aws_map, csv_map):
+    """
+    Merge AWS-provided tag maps and CSV-provided tag maps.
+
+    aws_map/csv_map: dict of resource_id -> { key: value }
+
+    Returns: (gold_map, conflicts)
+      - gold_map: resource_id -> merged {key: value} (CSV value preferred when conflict)
+      - conflicts: list of {resource_id, tag_key, aws_value, csv_value}
+
+    Merge policy: when both AWS and CSV have a value and they differ, the CSV
+    value is placed in the working gold_map but a conflict entry is emitted for
+    interactive review.
+    """
+    gold = {}
+    conflicts = []
+    resource_ids = set(aws_map.keys()) | set(csv_map.keys())
+    for rid in resource_ids:
+        gold[rid] = {}
+        aws_tags = aws_map.get(rid, {}) or {}
+        csv_tags = csv_map.get(rid, {}) or {}
+        keys = set(aws_tags.keys()) | set(csv_tags.keys())
+        for k in keys:
+            a = aws_tags.get(k)
+            c = csv_tags.get(k)
+            if a is not None and c is not None:
+                if a == c:
+                    gold[rid][k] = a
+                else:
+                    gold[rid][k] = c
+                    conflicts.append({"resource_id": rid, "tag_key": k, "aws_value": a, "csv_value": c})
+            elif c is not None:
+                gold[rid][k] = c
+            elif a is not None:
+                gold[rid][k] = a
+    return gold, conflicts

@@ -1,5 +1,5 @@
 ---
-milestone: 2
+milestone: 3
 ---
 # AWS-TagCheck — Roadmap
 
@@ -7,7 +7,7 @@ milestone: 2
 |-------|------|--------|--------------|
 | 1 | Foundation & guards | verified | REQ-01, REQ-02, REQ-03, REQ-04 |
 | 2 | EC2 compliance scan | verified | REQ-05 |
-| 3 | HTML report, polish & quality | verified | REQ-06, REQ-07, REQ-08 |
+| 3 | HTML report, polish & quality | in_progress | REQ-06, REQ-07, REQ-08 |
 
 ## Phase notes
 

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "cairn": {
+      "command": "node",
+      "args": [
+        "/Users/jsreed/repos/cairn2/server/dist/index.js"
+      ]
+    }
+  }
+}
