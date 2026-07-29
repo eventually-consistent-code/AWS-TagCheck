@@ -19,8 +19,8 @@
       "title": "REQ-07: Report polish — empty regions and stale copy",
       "bodyHash": "c0f85f3ee94e399b",
       "labels": [],
-      "state": "open",
-      "updatedAt": "2026-07-29T06:52:51Z"
+      "state": "closed",
+      "updatedAt": "2026-07-29T17:56:49Z"
     },
     "4": {
       "title": "REQ-04: Account guard for expected AWS account",
@@ -40,15 +40,15 @@
       "title": "REQ-06: HTML deviation report",
       "bodyHash": "9c3ea17f9dea7504",
       "labels": [],
-      "state": "open",
-      "updatedAt": "2026-07-29T06:52:51Z"
+      "state": "closed",
+      "updatedAt": "2026-07-29T17:56:41Z"
     },
     "7": {
       "title": "REQ-08: Tests and lint green",
       "bodyHash": "fd8c608eeabcc7d0",
       "labels": [],
-      "state": "open",
-      "updatedAt": "2026-07-29T06:52:51Z"
+      "state": "closed",
+      "updatedAt": "2026-07-29T17:56:58Z"
     },
     "8": {
       "title": "REQ-05: EC2 tag compliance scan vs canonical.json",
