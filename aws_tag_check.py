@@ -2,17 +2,20 @@
 
 """
 Purpose: Gather tag data from AWS EC2 instances, compare against canonical
-lists for environmental consistency, and report deviations. Phase 2 scans
-all accessible regions and records structured noncompliance rows; HTML
-report generation lands in phase 3.
+lists for environmental consistency, and report deviations as logs plus an
+HTML report (index.html).
 Author(s): John Reed, Nick Bitzer
 """
 
 
 # Imports
+import datetime
+import html
 import json
 import logging
+import os
 import sys
+from collections import defaultdict
 
 from botocore.exceptions import ClientError
 
@@ -38,9 +41,25 @@ LOG.setLevel(logging.INFO)
 # Regions historically inaccessible with the service account
 BAD_REGIONS = ["cn-north-1", "us-gov-west-1"]
 
-# Canonical list / HTML report paths (HTML is phase 3)
+# Canonical list / HTML report paths
 CON_FILE = "canonical.json"
 HTML_FILE = "index.html"
+
+# Optional extra guidance link (no hard-coded org URLs)
+GUIDANCE_URL_ENV = "AWS_TAGCHECK_GUIDANCE_URL"
+
+REPORT_TITLE = "AWS Tag Check Report"
+
+GUIDANCE_LINES = (
+    "All EC2 instances must have Environment and Product tags whose values "
+    "match the allowed lists in canonical.json.",
+    "If a field shows a missing sentinel, add the tag on the instance "
+    "(console, CLI, or infrastructure-as-code).",
+    "If a field shows an invalid value, correct the tag to a canonical value "
+    "or request the list be updated through your normal change process.",
+    "A plus was used historically to mean 'ok' in one column; this report "
+    "lists only noncompliant tags, one row per tag.",
+)
 
 
 def load_canonical(path):
@@ -55,15 +74,15 @@ def load_canonical(path):
     try:
         with open(path, encoding="utf-8") as canonical_file:
             data = json.load(canonical_file)
-    except FileNotFoundError:
+    except FileNotFoundError as err:
         LOG.error("canonical file not found: %s", path)
-        raise SystemExit(EXIT_CONFIG)
+        raise SystemExit(EXIT_CONFIG) from err
     except json.JSONDecodeError as err:
         LOG.error("canonical file is not valid json: %s", err)
-        raise SystemExit(EXIT_CONFIG)
+        raise SystemExit(EXIT_CONFIG) from err
     except OSError as err:
         LOG.error("could not read canonical file: %s", err)
-        raise SystemExit(EXIT_CONFIG)
+        raise SystemExit(EXIT_CONFIG) from err
 
     for key in ("Environment", "Product"):
         if key not in data or not isinstance(data[key], list):
@@ -113,8 +132,12 @@ def scan_region(session, region, canonical):
         skip = {"region": region, "code": code, "message": str(err)}
         return [], skip, 0
 
-    LOG.info("%s Complete... %s instance(s), %s violation(s)",
-             region, instances_seen, len(violations))
+    LOG.info(
+        "%s Complete... %s instance(s), %s violation(s)",
+        region,
+        instances_seen,
+        len(violations),
+    )
     return violations, None, instances_seen
 
 
@@ -136,9 +159,130 @@ def scan_all_regions(session, regions, canonical):
     return all_violations, region_skips, instances_seen
 
 
+def _group_violations_by_region(violations):
+    """
+    Group violation rows by region name (sorted keys).
+
+    :param violations: list of violation dicts
+    :returns: ordered dict-like mapping region → rows
+    """
+    grouped = defaultdict(list)
+    for row in violations:
+        grouped[row["region"]].append(row)
+    return {region: grouped[region] for region in sorted(grouped)}
+
+
+def render_html_report(violations, run_date, *, summary=None, guidance_url=None):
+    """
+    Build an HTML report string from violation rows.
+
+    Only regions with ≥1 violation get a table section (empty-region suppress).
+
+    :param violations: list of violation dicts
+    :param run_date: date or datetime for the header
+    :param summary: optional dict with regions_scanned, instances_seen, region_skips
+    :param guidance_url: optional extra documentation URL
+    :returns: full HTML document as str
+    """
+    if summary is None:
+        summary = {}
+    regions_scanned = int(summary.get("regions_scanned", 0))
+    instances_seen = int(summary.get("instances_seen", 0))
+    region_skips = summary.get("region_skips") or []
+
+    date_str = (
+        run_date.isoformat()
+        if hasattr(run_date, "isoformat")
+        else str(run_date)
+    )
+    parts = [
+        "<!DOCTYPE html>",
+        "<html>",
+        "<head>",
+        '<meta charset="utf-8">',
+        f"<title>{html.escape(REPORT_TITLE)}</title>",
+        "</head>",
+        "<body>",
+        f"<h1><u>{html.escape(REPORT_TITLE)}</u></h1>",
+        f"<h2><u>{html.escape(date_str)}</u></h2>",
+        "<pre>",
+        "*******************************************************************************",
+    ]
+    for line in GUIDANCE_LINES:
+        parts.append(f"* {html.escape(line)}")
+    if guidance_url:
+        parts.append(
+            f"* More detail: "
+            f'<a href="{html.escape(guidance_url, quote=True)}">'
+            f"{html.escape(guidance_url)}</a>"
+        )
+    parts.extend(
+        [
+            "*",
+            f"* Regions scanned: {regions_scanned}",
+            f"* Instances examined: {instances_seen}",
+            f"* Violations: {len(violations)}",
+            f"* Regions skipped: {len(region_skips)}",
+            "*******************************************************************************",
+            "</pre>",
+            "<hr>",
+        ]
+    )
+
+    if region_skips:
+        skip_names = ", ".join(
+            html.escape(s.get("region", "?")) for s in region_skips
+        )
+        parts.append(f"<p><em>Skipped regions: {skip_names}</em></p>")
+
+    if not violations:
+        parts.append("<p><strong>All tags clean — no deviations found.</strong></p>")
+    else:
+        by_region = _group_violations_by_region(violations)
+        for region, rows in by_region.items():
+            parts.append(f"<h2>Region {html.escape(region)}</h2>")
+            parts.append("<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">")
+            parts.append(
+                "<tr>"
+                "<th>Instance ID</th>"
+                "<th>Name</th>"
+                "<th>Tag</th>"
+                "<th>Value</th>"
+                "<th>Issue</th>"
+                "</tr>"
+            )
+            for row in rows:
+                parts.append(
+                    "<tr>"
+                    f"<td>{html.escape(str(row.get('instance_id', '')))}</td>"
+                    f"<td>{html.escape(str(row.get('name', '')))}</td>"
+                    f"<td>{html.escape(str(row.get('tag_key', '')))}</td>"
+                    f"<td>{html.escape(str(row.get('tag_value', '')))}</td>"
+                    f"<td>{html.escape(str(row.get('issue', '')))}</td>"
+                    "</tr>"
+                )
+            parts.append("</table>")
+
+    parts.extend(["</body>", "</html>", ""])
+    return "\n".join(parts)
+
+
+def write_html_report(path, html_body):
+    """
+    Write the HTML report to disk (overwrite).
+
+    :param path: output file path
+    :param html_body: full HTML document string
+    """
+    LOG.info("writing html report...")
+    with open(path, "w", encoding="utf-8") as report_file:
+        report_file.write(html_body)
+    LOG.info("html report saved... %s", path)
+
+
 def main():
     """
-    Guards → load canonical → multi-region EC2 tag scan → exit 0 or 1.
+    Guards → load canonical → multi-region EC2 tag scan → HTML report → exit 0/1.
     """
     LOG.info("starting aws tag check...")
 
@@ -182,7 +326,18 @@ def main():
             row["issue"],
         )
 
-    # Phase 3 will render violations as HTML (HTML_FILE).
+    guidance_url = os.environ.get(GUIDANCE_URL_ENV, "").strip() or None
+    report = render_html_report(
+        violations,
+        datetime.date.today(),
+        summary={
+            "regions_scanned": len(regions),
+            "instances_seen": instances_seen,
+            "region_skips": region_skips,
+        },
+        guidance_url=guidance_url,
+    )
+    write_html_report(HTML_FILE, report)
 
     if violations:
         LOG.info("found %s tag violation(s)...", len(violations))

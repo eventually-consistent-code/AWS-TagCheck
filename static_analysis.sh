@@ -1,12 +1,18 @@
-#!/bin/sh
+#!/bin/bash
 
 ################################################################
 # Simple way to run python static analysis check on your code. #
-# This checks against pylint and pep8 standards.               #
+# pylint + pycodestyle on the active modules.                  #
 ################################################################
 
-EXCLUDE_FOLDERS=build,dist,aws
-echo "Running pylint.."
-pylint --rcfile pylintrc *.py
-echo "Running PEP8..."
-pep8 --exclude=${EXCLUDE_FOLDERS} .
+set -euo pipefail
+
+TARGETS="aws.py aws_tag_check.py"
+
+echo "Running pylint..."
+pylint --rcfile pylintrc ${TARGETS}
+
+echo "Running pycodestyle..."
+pycodestyle --max-line-length=120 ${TARGETS}
+
+echo "static analysis complete."

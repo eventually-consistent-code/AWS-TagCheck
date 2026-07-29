@@ -96,19 +96,19 @@ def validate_credentials(session):
     try:
         sts = session.client("sts")
         identity = sts.get_caller_identity()
-    except NoCredentialsError:
+    except NoCredentialsError as err:
         LOG.error("no aws credentials found in the default chain...")
-        raise SystemExit(EXIT_CREDENTIALS)
+        raise SystemExit(EXIT_CREDENTIALS) from err
     except PartialCredentialsError as err:
         LOG.error("incomplete aws credentials: %s", err)
-        raise SystemExit(EXIT_CREDENTIALS)
+        raise SystemExit(EXIT_CREDENTIALS) from err
     except ClientError as err:
         code = err.response.get("Error", {}).get("Code", "ClientError")
         LOG.error("aws rejected credentials (%s): %s", code, err)
-        raise SystemExit(EXIT_CREDENTIALS)
+        raise SystemExit(EXIT_CREDENTIALS) from err
     except Exception as err:  # network / unexpected
         LOG.error("credential check failed: %s", err)
-        raise SystemExit(EXIT_CREDENTIALS)
+        raise SystemExit(EXIT_CREDENTIALS) from err
 
     account = identity.get("Account", "?")
     arn = identity.get("Arn", "?")
@@ -209,8 +209,7 @@ def iter_instances(session, region, filters=None):
         paginate_kwargs["Filters"] = filters
     for page in paginator.paginate(**paginate_kwargs):
         for reservation in page.get("Reservations", []):
-            for instance in reservation.get("Instances", []):
-                yield instance
+            yield from reservation.get("Instances", [])
 
 
 def evaluate_required_tags(tag_map, canonical):

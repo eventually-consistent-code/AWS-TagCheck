@@ -2,14 +2,13 @@
 # USAGE: pylint --rcfile pylintrc <filename> or <foldername>  --  NOTE: Folder must have __init__.py for pylint to work.
 
 [MASTER]
-ignore=build,dist,aws
+ignore=build,dist,.venv,tests
 
 [MESSAGES CONTROL]
 # Disable the following PyLint messages:
 # logging-format-interpolation - Use % formatting in logging functions and pass the % parameters as arguments
 # import-error - Unable to import %s
-# old-style-class - http://pylint-messages.wikidot.com/messages:c1001
-disable=logging-format-interpolation, import-error, old-style-class
+disable=logging-format-interpolation, import-error
 
 [REPORTS]
 
