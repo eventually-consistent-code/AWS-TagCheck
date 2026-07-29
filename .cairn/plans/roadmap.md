@@ -1,3 +1,6 @@
+---
+milestone: 2
+---
 # AWS-TagCheck — Roadmap
 
 | Phase | Name | Status | Requirements |
@@ -24,3 +27,7 @@ Generate HTML report, hide empty regions, clean copy, tests + lint green end-to-
 - Multi-resource types (RDS, S3, ELB, …) / config-driven resource matrix
 - Notifications (email/Slack/SNS)
 - Replacing Jenkins/Apache publish path (remains external)
+
+## Archived — v1
+
+Modernized AWS-TagCheck: Python 3 + boto3 foundation with credential/account guards, multi-region EC2 Environment/Product scan vs canonical.json, stdlib HTML report with empty-region polish, and pytest + lint green. — see milestones/v1/
