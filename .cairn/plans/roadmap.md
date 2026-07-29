@@ -3,7 +3,7 @@
 | Phase | Name | Status | Requirements |
 |-------|------|--------|--------------|
 | 1 | Foundation & guards | verified | REQ-01, REQ-02, REQ-03, REQ-04 |
-| 2 | EC2 compliance scan | planned | REQ-05 |
+| 2 | EC2 compliance scan | planned (ready to work) | REQ-05 |
 | 3 | HTML report, polish & quality | planned | REQ-06, REQ-07, REQ-08 |
 
 ## Phase notes

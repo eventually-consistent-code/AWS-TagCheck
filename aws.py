@@ -2,7 +2,7 @@
 
 """
 Purpose: AWS session helpers for tag check — boto3 session, STS identity,
-EC2 clients/regions, and simple tag-value membership checks.
+EC2 clients/regions, instance enumeration, and tag compliance checks.
 Author(s): John Reed, Nick Bitzer
 """
 
@@ -24,15 +24,35 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s
 LOG = logging.getLogger("root.aws")
 LOG.setLevel(logging.INFO)
 
-# Exit codes shared with the entrypoint (see CONTEXT.md phase 1)
+# Exit codes shared with the entrypoint
 EXIT_OK = 0
-EXIT_TAG_VIOLATIONS = 1  # reserved for phase 2+
+EXIT_TAG_VIOLATIONS = 1
 EXIT_CREDENTIALS = 2
 EXIT_ACCOUNT = 3
 EXIT_CONFIG = 4
 
 # Env var for the account guard
 EXPECTED_ACCOUNT_ENV = "AWS_TAGCHECK_EXPECTED_ACCOUNT"
+
+# Required tag keys and missing-value sentinels (legacy-friendly)
+REQUIRED_TAGS = (
+    ("Environment", "missing environment"),
+    ("Product", "missing product"),
+)
+
+# Default: scan everything except terminated
+DEFAULT_INSTANCE_FILTERS = [
+    {
+        "Name": "instance-state-name",
+        "Values": [
+            "pending",
+            "running",
+            "shutting-down",
+            "stopping",
+            "stopped",
+        ],
+    }
+]
 
 __all__ = [
     "EXIT_OK",
@@ -41,12 +61,17 @@ __all__ = [
     "EXIT_ACCOUNT",
     "EXIT_CONFIG",
     "EXPECTED_ACCOUNT_ENV",
+    "REQUIRED_TAGS",
+    "DEFAULT_INSTANCE_FILTERS",
     "build_session",
     "validate_credentials",
     "assert_expected_account",
     "ec2_client",
     "list_ec2_regions",
     "check_data",
+    "tags_to_dict",
+    "iter_instances",
+    "evaluate_required_tags",
 ]
 
 
@@ -153,3 +178,68 @@ def check_data(item, values):
     if item not in values:
         return item
     return None
+
+
+def tags_to_dict(instance):
+    """
+    Normalize an instance Tags list to a Key→Value dict.
+
+    :param instance: describe_instances instance dict
+    :returns: dict of tag key to value (empty if no tags)
+    """
+    tags = instance.get("Tags") or []
+    return {t["Key"]: t["Value"] for t in tags if "Key" in t}
+
+
+def iter_instances(session, region, filters=None):
+    """
+    Yield EC2 instance dicts for a region via paginated describe_instances.
+
+    :param session: boto3.Session
+    :param region: region name string
+    :param filters: optional Filters list; default excludes terminated only
+    :yields: instance dicts from Reservations
+    """
+    client = ec2_client(session, region)
+    paginator = client.get_paginator("describe_instances")
+    if filters is None:
+        filters = DEFAULT_INSTANCE_FILTERS
+    paginate_kwargs = {}
+    if filters:
+        paginate_kwargs["Filters"] = filters
+    for page in paginator.paginate(**paginate_kwargs):
+        for reservation in page.get("Reservations", []):
+            for instance in reservation.get("Instances", []):
+                yield instance
+
+
+def evaluate_required_tags(tag_map, canonical):
+    """
+    Evaluate Environment and Product tags against canonical lists.
+
+    :param tag_map: dict of tag Key→Value
+    :param canonical: dict with Environment and Product lists
+    :returns: list of {tag_key, tag_value, issue} for noncompliant tags
+    """
+    findings = []
+    for tag_key, missing_sentinel in REQUIRED_TAGS:
+        allowed = canonical.get(tag_key, [])
+        if tag_key not in tag_map:
+            findings.append(
+                {
+                    "tag_key": tag_key,
+                    "tag_value": missing_sentinel,
+                    "issue": "missing",
+                }
+            )
+            continue
+        value = tag_map[tag_key]
+        if check_data(value, allowed) is not None:
+            findings.append(
+                {
+                    "tag_key": tag_key,
+                    "tag_value": value,
+                    "issue": "invalid",
+                }
+            )
+    return findings
