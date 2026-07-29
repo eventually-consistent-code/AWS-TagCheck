@@ -4,7 +4,7 @@
 |-------|------|--------|--------------|
 | 1 | Foundation & guards | verified | REQ-01, REQ-02, REQ-03, REQ-04 |
 | 2 | EC2 compliance scan | verified | REQ-05 |
-| 3 | HTML report, polish & quality | worked (awaiting verify) | REQ-06, REQ-07, REQ-08 |
+| 3 | HTML report, polish & quality | verified | REQ-06, REQ-07, REQ-08 |
 
 ## Phase notes
 
