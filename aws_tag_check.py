@@ -306,21 +306,20 @@ def write_html_report(path, html_body):
     LOG.info("html report saved... %s", path)
 
 
-def build_gold_list(session, args, aws_tags_map):
+def load_csv_tags(session, args):
     """
-    Fetch the CSV (local path or s3:// URI), merge with AWS tags, and
-    optionally write gold-list + conflicts JSON to disk.
+    Fetch and parse the CSV (local path or s3:// URI) — run this before the
+    scan so a bad input fails in seconds, not after a full region sweep.
 
     :param session: boto3.Session
-    :param args: parsed CLI args (csv, write_gold, gold_output)
-    :param aws_tags_map: dict of instance_id -> tag dict from the scan
+    :param args: parsed CLI args (csv)
+    :returns: dict mapping resource_id -> { tag_key: tag_value }
     :raises SystemExit: EXIT_CONFIG when the CSV cannot be read
     """
     try:
         if args.csv.startswith("s3://"):
-            csv_tags_map = parse_csv_tags_text(read_s3_text(session, args.csv))
-        else:
-            csv_tags_map = parse_csv_tags(args.csv)
+            return parse_csv_tags_text(read_s3_text(session, args.csv))
+        return parse_csv_tags(args.csv)
     except FileNotFoundError as err:
         LOG.error("csv file not found: %s", args.csv)
         raise SystemExit(EXIT_CONFIG) from err
@@ -328,6 +327,15 @@ def build_gold_list(session, args, aws_tags_map):
         LOG.error("could not fetch csv from s3: %s", err)
         raise SystemExit(EXIT_CONFIG) from err
 
+
+def write_gold_outputs(args, aws_tags_map, csv_tags_map):
+    """
+    Merge AWS and CSV tag maps; optionally write gold-list + conflicts JSON.
+
+    :param args: parsed CLI args (write_gold, gold_output)
+    :param aws_tags_map: dict of instance_id -> tag dict from the scan
+    :param csv_tags_map: dict of resource_id -> tag dict from the CSV
+    """
     gold_map, conflicts = merge_tag_maps(aws_tags_map, csv_tags_map)
     LOG.info(
         "merged gold list for %s resources (%s conflict(s))",
@@ -396,13 +404,16 @@ def main():
         regions = [r for r in regions if r not in BAD_REGIONS]
     LOG.info("found %s region(s) to scan...", len(regions))
 
+    # Fetch the CSV up front — fail fast before paying for a full scan
+    csv_tags_map = load_csv_tags(session, args) if args.csv else {}
+
     # One pass: violations and the AWS tag map come from the same snapshot
     violations, region_skips, instances_seen, aws_tags_map = scan_all_regions(
         session, regions, canonical
     )
 
     if args.csv:
-        build_gold_list(session, args, aws_tags_map)
+        write_gold_outputs(args, aws_tags_map, csv_tags_map)
 
     LOG.info(
         "scan summary... regions=%s skips=%s instances=%s violations=%s",
