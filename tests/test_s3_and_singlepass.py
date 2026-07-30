@@ -8,6 +8,7 @@ import datetime
 from unittest import mock
 
 import pytest
+from botocore.exceptions import ClientError
 
 import aws
 from aws import (
@@ -21,6 +22,7 @@ from aws_tag_check import (
     load_canonical,
     load_csv_tags,
     scan_region,
+    upload_artifacts,
 )
 
 
@@ -87,6 +89,43 @@ def test_parse_csv_tags_text():
     )
     tags = parse_csv_tags_text(text)
     assert tags == {"i-abc": {"Environment": "Prod", "Product": "Core"}}
+
+
+def _s3_session(put_object=None):
+    client = mock.Mock()
+    if put_object is not None:
+        client.put_object.side_effect = put_object
+    session = mock.Mock()
+    session.client.return_value = client
+    return session, client
+
+
+def test_upload_artifacts_all_ok(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    (tmp_path / "gold-list.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "conflicts.json").write_text("[]", encoding="utf-8")
+    session, client = _s3_session()
+    args = mock.Mock(
+        s3_bucket="bkt", write_gold=True, csv="tags.csv", gold_output="gold-list.json"
+    )
+
+    assert upload_artifacts(session, args) is True
+    assert client.put_object.call_count == 3
+
+
+def test_upload_artifacts_reports_failure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    session, client = _s3_session(
+        put_object=ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+            "PutObject",
+        )
+    )
+    args = mock.Mock(s3_bucket="bkt", write_gold=False, csv=None)
+
+    assert upload_artifacts(session, args) is False
 
 
 def test_load_csv_tags_missing_file_exits():
