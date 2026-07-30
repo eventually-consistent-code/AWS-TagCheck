@@ -9,6 +9,7 @@ Author(s): John Reed, Nick Bitzer
 
 
 # Imports
+import argparse
 import datetime
 import html
 import json
@@ -30,6 +31,11 @@ from aws import (
     list_ec2_regions,
     tags_to_dict,
     validate_credentials,
+    parse_csv_tags,
+    parse_csv_tags_text,
+    merge_tag_maps,
+    read_s3_text,
+    upload_file_to_s3,
 )
 
 
@@ -104,10 +110,12 @@ def scan_region(session, region, canonical):
     :param session: boto3.Session
     :param region: region name
     :param canonical: canonical Environment/Product lists
-    :returns: (violations list, skip dict or None, instances_seen count)
+    :returns: (violations list, skip dict or None, instances_seen count,
+        region_tag_map of instance_id -> tag dict)
     """
     violations = []
     instances_seen = 0
+    region_tag_map = {}
     LOG.info("scanning %s...", region)
     try:
         for instance in iter_instances(session, region):
@@ -115,6 +123,7 @@ def scan_region(session, region, canonical):
             tag_map = tags_to_dict(instance)
             name = tag_map.get("Name") or "(no name)"
             instance_id = instance.get("InstanceId", "?")
+            region_tag_map[instance_id] = tag_map
             for finding in evaluate_required_tags(tag_map, canonical):
                 violations.append(
                     {
@@ -130,7 +139,7 @@ def scan_region(session, region, canonical):
         code = err.response.get("Error", {}).get("Code", "ClientError")
         LOG.warning("skipping region %s (%s)...", region, code)
         skip = {"region": region, "code": code, "message": str(err)}
-        return [], skip, 0
+        return [], skip, 0, {}
 
     LOG.info(
         "%s Complete... %s instance(s), %s violation(s)",
@@ -138,25 +147,42 @@ def scan_region(session, region, canonical):
         instances_seen,
         len(violations),
     )
-    return violations, None, instances_seen
+    return violations, None, instances_seen, region_tag_map
 
 
 def scan_all_regions(session, regions, canonical):
     """
-    Scan every region and aggregate violations + skips.
+    Scan every region and aggregate violations + skips + tag maps.
 
-    :returns: (violations, region_skips, instances_seen)
+    One pass over the API: the same iteration feeds both the violation
+    report and the gold-list merge, so both see one consistent snapshot.
+
+    :returns: (violations, region_skips, instances_seen, aws_tags_map)
     """
     all_violations = []
     region_skips = []
     instances_seen = 0
+    aws_tags_map = {}
     for region in regions:
-        violations, skip, seen = scan_region(session, region, canonical)
+        violations, skip, seen, region_tag_map = scan_region(
+            session, region, canonical
+        )
         all_violations.extend(violations)
         instances_seen += seen
+        aws_tags_map.update(region_tag_map)
         if skip is not None:
             region_skips.append(skip)
-    return all_violations, region_skips, instances_seen
+    return all_violations, region_skips, instances_seen, aws_tags_map
+
+
+def build_report_key(run_date):
+    """
+    Build the dated S3 object key for the HTML report.
+
+    :param run_date: date for the key
+    :returns: key string like reports/2026-07-30.html
+    """
+    return f"reports/{run_date.isoformat()}.html"
 
 
 def _group_violations_by_region(violations):
@@ -280,10 +306,90 @@ def write_html_report(path, html_body):
     LOG.info("html report saved... %s", path)
 
 
+def load_csv_tags(session, args):
+    """
+    Fetch and parse the CSV (local path or s3:// URI) — run this before the
+    scan so a bad input fails in seconds, not after a full region sweep.
+
+    :param session: boto3.Session
+    :param args: parsed CLI args (csv)
+    :returns: dict mapping resource_id -> { tag_key: tag_value }
+    :raises SystemExit: EXIT_CONFIG when the CSV cannot be read
+    """
+    try:
+        if args.csv.startswith("s3://"):
+            return parse_csv_tags_text(read_s3_text(session, args.csv))
+        return parse_csv_tags(args.csv)
+    except FileNotFoundError as err:
+        LOG.error("csv file not found: %s", args.csv)
+        raise SystemExit(EXIT_CONFIG) from err
+    except (ClientError, ValueError) as err:
+        LOG.error("could not fetch csv from s3: %s", err)
+        raise SystemExit(EXIT_CONFIG) from err
+
+
+def write_gold_outputs(args, aws_tags_map, csv_tags_map):
+    """
+    Merge AWS and CSV tag maps; optionally write gold-list + conflicts JSON.
+
+    :param args: parsed CLI args (write_gold, gold_output)
+    :param aws_tags_map: dict of instance_id -> tag dict from the scan
+    :param csv_tags_map: dict of resource_id -> tag dict from the CSV
+    """
+    gold_map, conflicts = merge_tag_maps(aws_tags_map, csv_tags_map)
+    LOG.info(
+        "merged gold list for %s resources (%s conflict(s))",
+        len(gold_map),
+        len(conflicts),
+    )
+    if args.write_gold:
+        payload = {"gold": gold_map, "conflicts": conflicts}
+        with open(args.gold_output, "w", encoding="utf-8") as outf:
+            json.dump(payload, outf, indent=2)
+        LOG.info("gold list written: %s", args.gold_output)
+        # also write conflicts separately for convenience
+        with open("conflicts.json", "w", encoding="utf-8") as cf:
+            json.dump(conflicts, cf, indent=2)
+        LOG.info("conflicts written: conflicts.json")
+
+
+def upload_artifacts(session, args):
+    """
+    Upload the HTML report (and gold artifacts, when written) to S3.
+
+    :param session: boto3.Session
+    :param args: parsed CLI args (s3_bucket, write_gold, csv, gold_output)
+    :returns: True when every upload succeeded, False otherwise
+    """
+    uploads = [(build_report_key(datetime.date.today()), HTML_FILE, "text/html")]
+    if args.write_gold and args.csv:
+        uploads.append((args.gold_output, args.gold_output, "application/json"))
+        uploads.append(("conflicts.json", "conflicts.json", "application/json"))
+
+    all_ok = True
+    for key, path, content_type in uploads:
+        try:
+            upload_file_to_s3(
+                session, args.s3_bucket, key, path, content_type=content_type
+            )
+        except (ClientError, OSError) as err:
+            LOG.error("s3 upload failed for %s: %s", path, err)
+            all_ok = False
+    return all_ok
+
+
 def main():
     """
-    Guards → load canonical → multi-region EC2 tag scan → HTML report → exit 0/1.
+    Guards → load canonical → single-pass multi-region EC2 tag scan →
+    optional CSV gold-list merge → HTML report → optional S3 upload → exit codes.
     """
+    parser = argparse.ArgumentParser(description="AWS Tag Check with optional CSV gold-list merge")
+    parser.add_argument("--csv", help="Path or s3:// URI to CSV with tag values (resource_id, tag_key, tag_value)")
+    parser.add_argument("--write-gold", action="store_true", help="Write merged gold-list.json (and conflicts.json)")
+    parser.add_argument("--gold-output", default="gold-list.json", help="Path to write gold-list JSON")
+    parser.add_argument("--s3-bucket", help="Upload the HTML report (and gold list, with --write-gold) to this bucket")
+    args = parser.parse_args()
+
     LOG.info("starting aws tag check...")
 
     session = build_session()
@@ -298,9 +404,16 @@ def main():
         regions = [r for r in regions if r not in BAD_REGIONS]
     LOG.info("found %s region(s) to scan...", len(regions))
 
-    violations, region_skips, instances_seen = scan_all_regions(
+    # Fetch the CSV up front — fail fast before paying for a full scan
+    csv_tags_map = load_csv_tags(session, args) if args.csv else {}
+
+    # One pass: violations and the AWS tag map come from the same snapshot
+    violations, region_skips, instances_seen, aws_tags_map = scan_all_regions(
         session, regions, canonical
     )
+
+    if args.csv:
+        write_gold_outputs(args, aws_tags_map, csv_tags_map)
 
     LOG.info(
         "scan summary... regions=%s skips=%s instances=%s violations=%s",
@@ -339,9 +452,16 @@ def main():
     )
     write_html_report(HTML_FILE, report)
 
+    # Ship artifacts to S3 when asked; scan verdict still wins the exit code
+    upload_failed = args.s3_bucket and not upload_artifacts(session, args)
+
     if violations:
         LOG.info("found %s tag violation(s)...", len(violations))
         sys.exit(EXIT_TAG_VIOLATIONS)
+
+    if upload_failed:
+        LOG.error("scan clean but s3 upload failed...")
+        sys.exit(EXIT_CONFIG)
 
     LOG.info("all tags clean...")
     sys.exit(EXIT_OK)

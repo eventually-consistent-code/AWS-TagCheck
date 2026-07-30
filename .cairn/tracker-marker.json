@@ -56,6 +56,33 @@
       "labels": [],
       "state": "closed",
       "updatedAt": "2026-07-29T17:48:52Z"
+    },
+    "9": {
+      "title": "aws tagcheck",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:sketch"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-29T18:32:53Z"
+    },
+    "10": {
+      "title": "Tag-list file errors are caught too late, wasting a full scan",
+      "bodyHash": "e6160d3005233e61",
+      "labels": [
+        "cairn:review"
+      ],
+      "state": "closed",
+      "updatedAt": "2026-07-30T08:37:30Z"
+    },
+    "11": {
+      "title": "New cloud-upload failure handling has no automated tests",
+      "bodyHash": "00306e9d3df9a5fe",
+      "labels": [
+        "cairn:review"
+      ],
+      "state": "closed",
+      "updatedAt": "2026-07-30T08:37:31Z"
     }
   },
   "phases": {
