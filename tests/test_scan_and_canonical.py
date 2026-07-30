@@ -41,9 +41,10 @@ def test_scan_region_skip_on_client_error():
             "DescribeInstances",
         ),
     ):
-        viol, skip, seen = scan_region(mock.Mock(), "us-east-1", canonical)
+        viol, skip, seen, tag_map = scan_region(mock.Mock(), "us-east-1", canonical)
     assert viol == []
     assert seen == 0
+    assert tag_map == {}
     assert skip["code"] == "UnauthorizedOperation"
 
 
@@ -67,7 +68,7 @@ def test_scan_region_findings():
         "aws_tag_check.iter_instances",
         return_value=iter(instances),
     ):
-        viol, skip, seen = scan_region(mock.Mock(), "us-west-2", canonical)
+        viol, skip, seen, _tag_map = scan_region(mock.Mock(), "us-west-2", canonical)
     assert skip is None
     assert seen == 2
     assert not any(v["instance_id"] == "i-good" for v in viol)

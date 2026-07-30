@@ -8,6 +8,8 @@ Author(s): John Reed, Nick Bitzer
 
 
 # Imports
+import csv
+import io
 import logging
 import os
 from collections import defaultdict
@@ -73,6 +75,12 @@ __all__ = [
     "tags_to_dict",
     "iter_instances",
     "evaluate_required_tags",
+    "parse_csv_tags",
+    "parse_csv_tags_text",
+    "merge_tag_maps",
+    "parse_s3_uri",
+    "read_s3_text",
+    "upload_file_to_s3",
 ]
 
 
@@ -245,26 +253,98 @@ def evaluate_required_tags(tag_map, canonical):
     return findings
 
 
+def _parse_csv_rows(reader):
+    """
+    Collect tag rows from a csv.DictReader into resource_id -> {key: value}.
+
+    Supports common alternate header names; skips malformed/empty rows.
+
+    :param reader: csv.DictReader over the tag rows
+    :returns: dict mapping resource_id -> { tag_key: tag_value }
+    """
+    tags = defaultdict(dict)
+    for row in reader:
+        rid = (row.get("resource_id") or row.get("instance_id") or row.get("resource") or "").strip()
+        key = (row.get("tag_key") or row.get("key") or "").strip()
+        value = (row.get("tag_value") or row.get("value") or "").strip()
+        if not rid or not key:
+            continue
+        tags[rid][key] = value
+    return dict(tags)
+
+
 def parse_csv_tags(path):
     """
     Parse a CSV file of tag entries. Expected columns: resource_id, tag_key, tag_value.
-    Returns a dict mapping resource_id -> { tag_key: tag_value }
-    """
-    import csv
 
-    tags = defaultdict(dict)
+    :param path: path to the CSV file
+    :returns: dict mapping resource_id -> { tag_key: tag_value }
+    """
     with open(path, encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        # Support common alternate header names
-        for row in reader:
-            rid = (row.get("resource_id") or row.get("instance_id") or row.get("resource") or "").strip()
-            key = (row.get("tag_key") or row.get("key") or "").strip()
-            value = (row.get("tag_value") or row.get("value") or "").strip()
-            if not rid or not key:
-                # skip malformed/empty rows
-                continue
-            tags[rid][key] = value
-    return dict(tags)
+        return _parse_csv_rows(csv.DictReader(fh))
+
+
+def parse_csv_tags_text(text):
+    """
+    Parse CSV tag entries from an in-memory string (e.g. fetched from S3).
+
+    :param text: full CSV document as a string
+    :returns: dict mapping resource_id -> { tag_key: tag_value }
+    """
+    return _parse_csv_rows(csv.DictReader(io.StringIO(text)))
+
+
+def parse_s3_uri(uri):
+    """
+    Split an s3://bucket/key URI into (bucket, key).
+
+    :param uri: s3:// URI string
+    :returns: (bucket, key) tuple
+    :raises ValueError: if the URI is not s3:// or has no key
+    """
+    if not uri.startswith("s3://"):
+        raise ValueError(f"not an s3 uri: {uri}")
+    remainder = uri[len("s3://"):]
+    bucket, _, key = remainder.partition("/")
+    if not bucket or not key:
+        raise ValueError(f"s3 uri needs bucket and key: {uri}")
+    return bucket, key
+
+
+def read_s3_text(session, uri):
+    """
+    Fetch an S3 object as utf-8 text.
+
+    :param session: boto3.Session
+    :param uri: s3://bucket/key URI
+    :returns: object body decoded as utf-8
+    """
+    bucket, key = parse_s3_uri(uri)
+    LOG.info("fetching s3://%s/%s...", bucket, key)
+    client = session.client("s3")
+    response = client.get_object(Bucket=bucket, Key=key)
+    return response["Body"].read().decode("utf-8")
+
+
+def upload_file_to_s3(session, bucket, key, path, content_type=None):
+    """
+    Upload a local file to S3 via put_object.
+
+    :param session: boto3.Session
+    :param bucket: destination bucket name
+    :param key: destination object key
+    :param path: local file path to upload
+    :param content_type: optional Content-Type for the object
+    """
+    LOG.info("uploading %s to s3://%s/%s...", path, bucket, key)
+    with open(path, "rb") as fh:
+        body = fh.read()
+    client = session.client("s3")
+    kwargs = {"Bucket": bucket, "Key": key, "Body": body}
+    if content_type:
+        kwargs["ContentType"] = content_type
+    client.put_object(**kwargs)
+    LOG.info("upload complete... s3://%s/%s", bucket, key)
 
 
 def merge_tag_maps(aws_map, csv_map):
