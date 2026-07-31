@@ -110,8 +110,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T09:50:41Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T09:52:41Z"
     },
     "21": {
       "title": "Storage pricing maps + stale-data cost report",
