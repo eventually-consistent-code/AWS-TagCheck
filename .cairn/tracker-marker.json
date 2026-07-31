@@ -204,6 +204,15 @@
       ],
       "state": "open",
       "updatedAt": "2026-07-31T09:11:45Z"
+    },
+    "31": {
+      "title": "Phase 2 verify REFUTED: age-out projector omits Glacier per-object overhead (sign-flipped recommendation on tiny-object cells); plus unsupported INT→Standard-IA transition modeled, missing marginal_rate and CLI target override, delete option blind to non-transition-class stale data, refresh region mislabeling",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:bug"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T10:32:50Z"
     }
   },
   "phases": {

@@ -123,6 +123,94 @@ def test_archive_uses_deep_archive_for_oldest_band():
     assert any("180d" in caveat for caveat in archive.caveats)
 
 
+def test_age_out_glacier_band_carries_overhead():
+    """Verifier blocker: tiny objects aging out into Glacier must show the
+    overhead-driven loss — same physics as the archive option."""
+    pricing = load_pricing()
+    n = 1_000_000
+    cells = [_cell(band=">365d", count=n, total_bytes=n * 1 * KIB,
+                   small_count=n, small_bytes=n * 1 * KIB)]
+    age_out = _by_option(project_options(cells, pricing, BANDS))["age-out"]
+
+    assert age_out.monthly_savings < 0
+    assert age_out.not_recommended
+
+
+def test_age_out_skips_unsupported_int_transition():
+    """AWS forbids INT -> Standard-IA; mid-band INT cells are skipped."""
+    pricing = load_pricing()
+    cells = [_cell(sclass="INTELLIGENT_TIERING", total_bytes=BYTES_PER_GB)]
+    age_out = _by_option(project_options(cells, pricing, BANDS))["age-out"]
+
+    assert age_out.monthly_savings == 0
+    assert age_out.caveats == ["no eligible stale data"]
+    assert not age_out.not_recommended
+
+
+def test_delete_covers_non_transition_classes():
+    """Stale GLACIER data still saves real money when deleted."""
+    pricing = load_pricing()
+    cells = [_cell(band=">365d", sclass="GLACIER",
+                   total_bytes=100 * BYTES_PER_GB)]
+    delete = _by_option(project_options(cells, pricing, BANDS))["delete"]
+
+    assert delete.monthly_savings == pytest.approx(100 * 0.0036)
+    assert not delete.not_recommended
+
+
+def test_savings_use_marginal_rate_across_tier_break():
+    """Verifier finding 4: removing 1 TB from a 61 TB aggregate saves at
+    the 0.022 marginal tier rate, not the blended effective rate."""
+    pricing = load_pricing()
+    tb = 1024 * BYTES_PER_GB
+    cells = [_cell(band="90-365d", total_bytes=1 * tb, prefix="stale"),
+             _cell(band="<90d", total_bytes=60 * tb, prefix="fresh")]
+    delete = _by_option(project_options(cells, pricing, BANDS))["delete"]
+
+    assert delete.monthly_savings == pytest.approx(1024 * 0.022)
+
+
+def test_band_target_overrides_keyed_on_days():
+    """Override map keys on threshold day values; unknown day raises."""
+    assert default_band_targets([90, 365], {365: "DEEP_ARCHIVE"}) == {
+        "90-365d": "STANDARD_IA", ">365d": "DEEP_ARCHIVE"}
+    with pytest.raises(ValueError):
+        default_band_targets([90, 365], {30: "GLACIER"})
+
+
+def test_empty_run_reports_nothing_to_act_on():
+    """No stale data -> calm 'no eligible stale data', never NOT RECOMMENDED."""
+    pricing = load_pricing()
+    projections = project_options([], pricing, BANDS)
+    for proj in projections:
+        assert proj.caveats == ["no eligible stale data"]
+        assert not proj.not_recommended
+
+
+def test_cli_age_out_map_flag(tmp_path, monkeypatch):
+    """Bad --age-out-map exits 4; good map runs clean."""
+    monkeypatch.setenv("TAGMANAGER_DB_URL",
+                       f"sqlite:///{tmp_path / 'scan.db'}")
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    class _Provider:
+        backend_name = "s3"
+
+        def list_objects(self, container, prefix=""):
+            yield StorageObject(backend="s3", container=container,
+                                key="old/x", size_bytes=BYTES_PER_GB,
+                                last_modified=now - datetime.timedelta(days=100))
+
+        def capabilities(self):
+            raise NotImplementedError
+
+    assert cli.main(["--bucket", "b"], provider=_Provider()) == 0
+    assert cli.main(["--project-savings",
+                     "--age-out-map", "90=GLACIER_IR"]) == 0
+    assert cli.main(["--project-savings", "--age-out-map", "banana"]) == 4
+    assert cli.main(["--project-savings", "--age-out-map", "7=GLACIER"]) == 4
+
+
 def test_cli_project_savings_end_to_end(tmp_path, monkeypatch, capsys):
     """Scan a mixed bucket then --project-savings from the saved run."""
     monkeypatch.setenv("TAGMANAGER_DB_URL",

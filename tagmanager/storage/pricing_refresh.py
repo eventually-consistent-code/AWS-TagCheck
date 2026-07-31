@@ -140,6 +140,12 @@ def refresh(region, fetch=None):
     ladders = extract_storage_rates(offer)
     changes = apply_rates(snapshot, ladders)
 
+    if region != snapshot.get("region"):
+        LOG.warning("storage rates refreshed for %s, but fee/monitoring/"
+                    "retrieval data still reflects the %s baseline — verify "
+                    "fees before trusting projections in this region",
+                    region, snapshot.get("region"))
+        snapshot["fee_data_region"] = snapshot.get("region")
     snapshot["region"] = region
     snapshot["as_of_date"] = datetime.date.today().isoformat()
     snapshot["source"] = url

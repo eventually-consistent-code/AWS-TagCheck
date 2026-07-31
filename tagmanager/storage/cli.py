@@ -73,6 +73,9 @@ def parse_args(argv):
                         help="project per-option savings for the stale slice")
     parser.add_argument("--savings-csv", default="",
                         help="write the savings projections to this CSV path")
+    parser.add_argument("--age-out-map", default="",
+                        help="override age-out targets, keyed on threshold "
+                             "days: e.g. 90=STANDARD_IA,365=DEEP_ARCHIVE")
     return parser.parse_args(argv)
 
 
@@ -241,6 +244,25 @@ def write_savings_csv(path, projections):
                 proj.not_recommended, "; ".join(proj.caveats)])
 
 
+def _parse_age_out_map(raw):
+    """
+    Parse --age-out-map "90=STANDARD_IA,365=DEEP_ARCHIVE" into {90: ...}.
+
+    :param raw: flag value ("" -> None)
+    :returns: dict of int day -> storage class, or None
+    :raises ValueError: malformed pairs
+    """
+    if not raw:
+        return None
+    mapping = {}
+    for pair in raw.split(","):
+        day, _, sclass = pair.partition("=")
+        if not sclass:
+            raise ValueError(f"bad --age-out-map entry {pair!r}")
+        mapping[int(day)] = sclass.strip()
+    return mapping
+
+
 def _run_projections(session, run, args):
     """
     Build, print, and optionally CSV the savings projections for one run.
@@ -248,11 +270,17 @@ def _run_projections(session, run, args):
     :param session: SQLAlchemy session
     :param run: StorageScanRun to project from
     :param args: parsed CLI namespace
-    :returns: exit code — 0 OK
+    :returns: exit code — 0 OK, 4 bad override map
     """
     pricing = load_pricing(provider="s3")
-    projections = project_options(stats_for_run(session, run.id), pricing,
-                                  run.age_band_days)
+    try:
+        band_targets = _parse_age_out_map(args.age_out_map)
+        projections = project_options(stats_for_run(session, run.id), pricing,
+                                      run.age_band_days,
+                                      band_targets=band_targets)
+    except ValueError as err:
+        LOG.error("%s", err)
+        return 4
     print_projections(projections)
     if args.savings_csv:
         write_savings_csv(args.savings_csv, projections)
@@ -312,7 +340,7 @@ def _analyze_latest(settings, args):
     if args.cost_report:
         _run_cost_report(session, run, args)
     if args.project_savings:
-        _run_projections(session, run, args)
+        return _run_projections(session, run, args)
     return 0
 
 
@@ -354,12 +382,15 @@ def main(argv=None, provider=None):
     builder = RollupBuilder(age_band_days=age_band_days,
                             prefix_depth=prefix_depth)
 
-    print("scanning storage...")
-    skips = scan_buckets(provider, args.bucket, args.prefix, builder)
-
+    # Guard the schema BEFORE the walk — a stale dev DB should fail in
+    # milliseconds, not after a full bucket scan.
     session = _open_session(settings)
     if session is None:
         return 4
+
+    print("scanning storage...")
+    skips = scan_buckets(provider, args.bucket, args.prefix, builder)
+
     run = persist_rollups(session, builder, backend=provider.backend_name,
                           skips=skips)
     session.commit()
@@ -374,7 +405,7 @@ def main(argv=None, provider=None):
     if args.cost_report:
         _run_cost_report(session, run, args)
     if args.project_savings:
-        _run_projections(session, run, args)
+        return _run_projections(session, run, args)
 
     return 0
 
