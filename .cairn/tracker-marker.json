@@ -228,6 +228,15 @@
       ],
       "state": "closed",
       "updatedAt": "2026-07-31T10:39:10Z"
+    },
+    "33": {
+      "title": "Phase 4 verify: print_summary hardcodes s3:// URI prefix on oldest-objects lines — wrong for azure/gcs/fs backends",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:bug"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T11:27:06Z"
     }
   },
   "phases": {

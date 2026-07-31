@@ -211,10 +211,13 @@ def print_summary(builder):
     if oldest:
         print()
         print("oldest objects:")
+        schemes = {"s3": "s3://", "azure": "azure://", "gcs": "gs://"}
         for obj in oldest[:5]:
             when = obj.last_modified.date().isoformat()
+            scheme = schemes.get(obj.backend, "")
+            sep = "" if obj.container.endswith("/") else "/"
             print(f"  {when}  {_fmt_bytes(obj.size_bytes):>10}  "
-                  f"s3://{obj.container}/{obj.key}")
+                  f"{scheme}{obj.container}{sep}{obj.key}")
 
 
 def print_cost_report(report):
