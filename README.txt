@@ -80,12 +80,13 @@ browse tags across cloud providers. Database defaults to SQLite; to use
 PostgreSQL, pass TAGMANAGER_DB_URL as an environment variable.
 
 Configuration:
-  TAGMANAGER_DB_URL              database connection URL (default: SQLite
-                                 in-memory); use postgresql+psycopg://
-                                 for PostgreSQL
+  TAGMANAGER_DB_URL              database connection URL (default:
+                                 sqlite:///tagmanager.db, file-backed);
+                                 use postgresql+psycopg:// for PostgreSQL
   TAGMANAGER_AUTH_MODE           "none" (default) or "oidc"
-  TAGMANAGER_OIDC_DISCOVERY_URL  OpenID Connect discovery URL (required if
-                                 AUTH_MODE=oidc)
+  TAGMANAGER_OIDC_ISSUER         OpenID Connect issuer URL (required if
+                                 AUTH_MODE=oidc); app derives discovery
+                                 endpoint itself
   TAGMANAGER_OIDC_CLIENT_ID      OIDC client ID (required if AUTH_MODE=oidc)
   TAGMANAGER_OIDC_CLIENT_SECRET  OIDC client secret (required if AUTH_MODE=oidc)
   TAGMANAGER_SCAN_INTERVAL_MINUTES  how often to scan clouds (default: 60)

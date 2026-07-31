@@ -12,8 +12,6 @@ from sqlalchemy.pool import StaticPool
 from tagmanager.app.main import create_app
 from tagmanager.config import Settings
 from tagmanager.models.base import create_all, session_factory
-# Import all table models to register them with Base
-from tagmanager.models import tables  # pylint: disable=unused-import
 from tagmanager.providers.aws_provider import AwsProvider
 from tagmanager.providers.azure_provider import AzureProvider
 from tagmanager.providers.gcp_provider import GcpProvider
