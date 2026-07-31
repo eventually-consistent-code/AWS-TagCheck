@@ -4,3 +4,4 @@
 
 - [x] 24 — Lifecycle config generator + hard validator + --emit-lifecycle with APPLY.md (133 tests, lint green) — commits fbe8c96..368bacd — 24 closed 2026-07-31
 - [x] 23 — Delete manifests both flavors — Expiration rules via --delete-after + streamed chunked delete-objects JSON (138 tests, lint green) — commits 368bacd..1c761fd — 23 closed 2026-07-31
+- [x] 25 — Tiering configs (--emit-tiering) + batch-copy manifests with URL-encoding and 5 GB skip list (145 tests, lint green) — commits 1c761fd..910e23f — 25 closed 2026-07-31

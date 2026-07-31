@@ -160,8 +160,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T10:58:42Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T11:01:56Z"
     },
     "26": {
       "title": "Azure Blob + GCS scanners behind inventory interface",
