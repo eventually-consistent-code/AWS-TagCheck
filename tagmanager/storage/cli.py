@@ -111,6 +111,12 @@ def parse_args(argv):
                         help="scan mode only: local S3 server-access-log "
                              "files to fold into a last-read index "
                              "(ages become access-aware lower bounds)")
+    parser.add_argument("--cloudtrail-logs", default="", metavar="GLOB",
+                        help="scan mode only: local CloudTrail data-event "
+                             "log files (.json/.json.gz) for GetObject reads "
+                             "— merges into the same last-read index. S3 "
+                             "data events are off by default and bill per "
+                             "event; this parses only what you exported")
     return parser.parse_args(argv)
 
 
@@ -362,6 +368,53 @@ def _print_emitter_report(report):
     print(f"batch-copy manifests saved to {report.out_dir}/.")
 
 
+def _resolve_access_index(args):
+    """
+    Build the last-read enrichment index from access logs and/or
+    CloudTrail data-event logs.
+
+    :param args: parsed CLI namespace
+    :returns: (index or None, exit-code-or-0) — nonzero rc means a glob
+        matched no files
+    """
+    access_files = _glob_or_none(args.access_logs, "--access-logs")
+    if access_files is False:
+        return None, 4
+    ct_files = _glob_or_none(args.cloudtrail_logs, "--cloudtrail-logs")
+    if ct_files is False:
+        return None, 4
+    if not access_files and not ct_files:
+        return None, 0
+
+    if ct_files:
+        print("note: CloudTrail S3 data events are off by default and bill "
+              "per event — parsing only what you exported, enabling nothing.")
+    report = services.build_access_report(
+        access_log_paths=access_files or (),
+        cloudtrail_paths=ct_files or ())
+    print(f"access index ready: {report.events} read event(s), "
+          f"{report.keys} key(s) from {' + '.join(report.sources)}. ages "
+          "become access-aware lower bounds (delivery is best-effort).")
+    return report.index, 0
+
+
+def _glob_or_none(pattern, flag_name):
+    """
+    Sorted glob matches, None when the flag is unset, False on empty match.
+
+    :param pattern: glob string ("" -> unset)
+    :param flag_name: flag label for the error message
+    :returns: list of paths, None, or False
+    """
+    if not pattern:
+        return None
+    files = sorted(globlib.glob(pattern))
+    if not files:
+        LOG.error("%s matched no files: %r", flag_name, pattern)
+        return False
+    return files
+
+
 def _scan(settings, args, provider):
     """
     Scan mode: build options, run the scan service, print everything.
@@ -374,18 +427,9 @@ def _scan(settings, args, provider):
         LOG.error("%s", err)
         return 4
 
-    access_index = None
-    if args.access_logs:
-        log_files = sorted(globlib.glob(args.access_logs))
-        if not log_files:
-            LOG.error("--access-logs matched no files: %r", args.access_logs)
-            return 4
-        print("loading access logs...")
-        access_report = services.build_access_report(log_files)
-        access_index = access_report.index
-        print(f"access index ready: {access_report.events} read event(s), "
-              f"{access_report.keys} key(s). ages become access-aware "
-              "lower bounds (log delivery is best-effort, hours of lag).")
+    access_index, index_rc = _resolve_access_index(args)
+    if index_rc:
+        return index_rc
 
     try:
         maker = services.open_storage_session_maker(settings)

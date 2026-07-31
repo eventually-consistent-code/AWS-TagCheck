@@ -17,6 +17,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from tagmanager.config import get_settings
 from tagmanager.models.base import create_all, get_engine, session_factory
 from tagmanager.storage.access_log import load_access_index
+from tagmanager.storage.cloudtrail_log import load_cloudtrail_index
 from tagmanager.storage.azure_provider import AzureBlobStorageProvider
 from tagmanager.storage.cost import build_cost_report
 from tagmanager.storage.fs_provider import FilesystemStorageProvider
@@ -75,6 +76,7 @@ class ScanOptions:  # pylint: disable=too-many-instance-attributes
     rollup_owners: bool = False
     rollup_types: bool = False
     access_log_paths: tuple = ()
+    cloudtrail_log_paths: tuple = ()
     access_index: dict = None
     on_object: object = None
     emit_delete_dir: str = ""
@@ -86,11 +88,12 @@ class ScanOptions:  # pylint: disable=too-many-instance-attributes
 
 @dataclass
 class AccessIndexReport:
-    """What an access-log fold produced."""
+    """What an access-enrichment fold produced (across sources)."""
 
     events: int
     keys: int
     index: dict
+    sources: list = field(default_factory=list)
 
 
 @dataclass
@@ -262,15 +265,34 @@ def validated_band_targets(raw, pricing):
     return band_targets
 
 
-def build_access_report(paths):
+def build_access_report(access_log_paths=(), cloudtrail_paths=()):
     """
-    Fold access-log files into an enrichment index.
+    Fold access-log and/or CloudTrail files into ONE enrichment index.
 
-    :param paths: log file paths (already resolved, non-empty)
+    Both sources merge — newest read wins per (bucket, key) across
+    sources — and the contributing source labels are recorded.
+
+    :param access_log_paths: S3 server-access-log file paths
+    :param cloudtrail_paths: CloudTrail data-event file paths
     :returns: AccessIndexReport
     """
-    index, used = load_access_index(list(paths))
-    return AccessIndexReport(events=used, keys=len(index), index=index)
+    index = {}
+    events = 0
+    sources = []
+    for label, loader, paths in (
+            ("S3 access logs", load_access_index, list(access_log_paths)),
+            ("CloudTrail", load_cloudtrail_index, list(cloudtrail_paths))):
+        if not paths:
+            continue
+        sub_index, used = loader(paths)
+        events += used
+        sources.append(label)
+        for cell_key, read_time in sub_index.items():
+            existing = index.get(cell_key)
+            if existing is None or read_time > existing:
+                index[cell_key] = read_time
+    return AccessIndexReport(events=events, keys=len(index), index=index,
+                             sources=sources)
 
 
 # Scan
@@ -445,8 +467,11 @@ def _walk(provider, opts, builder, emitters, age_band_days):
     """
     access_report = None
     access_index = opts.access_index
-    if access_index is None and opts.access_log_paths:
-        access_report = build_access_report(opts.access_log_paths)
+    if access_index is None and (opts.access_log_paths
+                                 or opts.cloudtrail_log_paths):
+        access_report = build_access_report(
+            access_log_paths=opts.access_log_paths,
+            cloudtrail_paths=opts.cloudtrail_log_paths)
         access_index = access_report.index
 
     cancelled = False

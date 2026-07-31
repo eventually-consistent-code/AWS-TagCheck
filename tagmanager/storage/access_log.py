@@ -58,26 +58,44 @@ def parse_line(line):
         return None
 
 
-def load_access_index(paths):
+def fold_reads(parsed_iter):
     """
-    Fold log files into {(bucket, key): newest read time}.
+    Fold (bucket, key, read_time) tuples into a newest-wins index.
 
-    :param paths: iterable of local log file paths
+    Shared by every last-read source (access logs, CloudTrail).
+
+    :param parsed_iter: iterable of (bucket, key, aware datetime) or None
     :returns: (index dict, records_used count)
     """
     index = {}
     used = 0
-    for path in paths:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                parsed = parse_line(line)
-                if parsed is None:
-                    continue
-                bucket, key, read_time = parsed
-                used += 1
-                existing = index.get((bucket, key))
-                if existing is None or read_time > existing:
-                    index[(bucket, key)] = read_time
+    for parsed in parsed_iter:
+        if parsed is None:
+            continue
+        bucket, key, read_time = parsed
+        used += 1
+        existing = index.get((bucket, key))
+        if existing is None or read_time > existing:
+            index[(bucket, key)] = read_time
+    return index, used
+
+
+def load_access_index(paths):
+    """
+    Fold access-log files into {(bucket, key): newest read time}.
+
+    :param paths: iterable of local log file paths
+    :returns: (index dict, records_used count)
+    """
+    paths = list(paths)
+
+    def _lines():
+        for path in paths:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    yield parse_line(line)
+
+    index, used = fold_reads(_lines())
     LOG.info("access index: %s read events over %s keys from %s file(s).",
-             used, len(index), len(list(paths)))
+             used, len(index), len(paths))
     return index, used
