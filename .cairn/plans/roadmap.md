@@ -3,53 +3,48 @@ milestone: 5
 ---
 # TagManager — Roadmap
 
-Milestone 4 — storage lifecycle optimizer. Static/unstructured data in mass
-storage: find old data by user-defined age, price what it costs to keep,
-generate management options (delete / age-out / tiering / archive), and
-recommend saner storage structures. Posture: analyze + generate artifacts;
-a human applies them. Targets: S3 first (walking skeleton), then Azure Blob,
-GCS, SMB/local filesystem.
+Milestone 5 — deeper signals. Sharpen what the optimizer knows before it
+ever acts: data-type awareness, CloudTrail read tracking, request-rate
+signals, evidence-labeled recommendations — and the apply ladder's first
+rung, a zero-write dry-run diff engine. Destructive-surface posture:
+dry-run-first ladder; nothing writes to cloud state this milestone.
 
 | Phase | Name | Status | Requirements |
 |-------|------|--------|--------------|
-| 1 | Inventory core & age scan | planned | REQ-01, REQ-02 |
-| 2 | Cost analysis engine | planned | REQ-03, REQ-04 |
-| 3 | Lifecycle recommendations | planned | REQ-05, REQ-06, REQ-07 |
-| 4 | Multi-backend expansion | planned | REQ-08, REQ-09, REQ-10 |
-| 5 | Structure recommendations & reporting | planned | REQ-11, REQ-12 |
+| 1 | Data type signals | planned | REQ-01, REQ-02 |
+| 2 | CloudTrail read tracking | planned | REQ-03 |
+| 3 | Request rate awareness | planned | REQ-04 |
+| 4 | Signal-driven recommendations | planned | REQ-05 |
+| 5 | Dry-run diff engine | planned | REQ-06 |
 
 ## Phase notes
 
-### Phase 1 — Inventory core & age scan
-Backend-agnostic inventory model + scanner interface; S3 scanner collecting
-size/storage-class/LastModified; user-configurable age thresholds. Thin
-vertical slice: scan → age bands → summary output end-to-end.
+### Phase 1 — Data type signals
+Extension-derived coarse type dimension in rollups (opt-in, like owner);
+type-aware structure recommendations — closes v4's declared REQ-11 gap.
 
-### Phase 2 — Cost analysis engine
-Per-backend/per-class pricing maps, stale-data monthly cost report by
-bucket/prefix and age band, savings projections per management option
-(including transition/retrieval caveats).
+### Phase 2 — CloudTrail read tracking
+CloudTrail data-event logs as a second access-index source feeding the
+same per-key last-read enrichment; source labeled, cost warning stated.
 
-### Phase 3 — Lifecycle recommendations
-Generated, human-applied artifacts: delete manifests, S3 lifecycle policy
-JSON from age thresholds, Intelligent-Tiering configs, archive/batch move
-plans (Glacier tiers, S3 Batch Operations manifests).
+### Phase 3 — Request rate awareness
+Per-prefix read/write rate estimates from access-log/CloudTrail op counts,
+persisted with the run; unlocks the perf fan-out advice v4 excluded.
 
-### Phase 4 — Multi-backend expansion
-Azure Blob + GCS scanners behind the phase-1 interface; SMB/local filesystem
-scanner (atime/mtime); access enrichment — last-READ signals from S3 access
-logs / Storage Class Analysis / FS atime, so read-hot-never-edited data isn't
-flagged stale.
+### Phase 4 — Signal-driven recommendations
+Recommendations consume the new signals: telemetry-verified zone splits,
+churn/expiry-in-place advice, per-rec confidence labels naming evidence.
 
-### Phase 5 — Structure recommendations & reporting
-Reorg proposals from observed inventory (group by data type, owner/principal,
-access frequency) with move manifests; HTML/CSV report sections for age, cost,
-options, and structure.
+### Phase 5 — Dry-run diff engine
+Apply-ladder rung one, zero writes: diff live bucket lifecycle/tiering
+config against generated artifacts, rule-by-rule "what would change" +
+manifest freshness checks. Guarded applies remain a later milestone.
 
 ## Out of scope (later milestones)
 
-- Apply mode (tool executing deletes/tiering itself behind --apply)
-- CloudTrail data-event ingestion for per-object read tracking
+- Actual apply mode (writes to cloud state) — ladder rungs two and three
+- S3 Inventory-report ingestion for billion-object buckets; more pricing
+  regions; scheduler-driven storage scans
 - Multi-resource tag matrix (RDS, ELB, …), notifications (email/Slack/SNS)
 - Replacing Jenkins/Apache publish path (remains external)
 

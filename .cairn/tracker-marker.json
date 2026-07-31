@@ -248,6 +248,60 @@
       ],
       "state": "closed",
       "updatedAt": "2026-07-31T12:08:08Z"
+    },
+    "35": {
+      "title": "Data-type dimension in rollups (opt-in, extension-derived)",
+      "bodyHash": "e4409896f127ca4b",
+      "labels": [
+        "milestone-5"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T12:44:06Z"
+    },
+    "36": {
+      "title": "Type-aware structure recommendations",
+      "bodyHash": "89f37aa5a06f3cbf",
+      "labels": [
+        "milestone-5"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T12:44:08Z"
+    },
+    "37": {
+      "title": "CloudTrail data-event ingestion as access-index source",
+      "bodyHash": "68dc27b9076c332b",
+      "labels": [
+        "milestone-5"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T12:44:11Z"
+    },
+    "38": {
+      "title": "Per-prefix request-rate signals",
+      "bodyHash": "a55e57efc5931504",
+      "labels": [
+        "milestone-5"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T12:44:13Z"
+    },
+    "39": {
+      "title": "Signal-driven recommendation upgrades",
+      "bodyHash": "fb986b74527add4f",
+      "labels": [
+        "milestone-5"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T12:44:15Z"
+    },
+    "40": {
+      "title": "Dry-run diff engine (apply-ladder rung one, zero writes)",
+      "bodyHash": "0ae6b6024ee66bc9",
+      "labels": [
+        "milestone-5"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T12:44:18Z"
     }
   },
   "phases": {
