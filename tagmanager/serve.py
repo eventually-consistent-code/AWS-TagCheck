@@ -18,6 +18,7 @@ from tagmanager.providers.azure_provider import AzureProvider
 from tagmanager.providers.base import ScopeConfig
 from tagmanager.providers.gcp_provider import GcpProvider
 from tagmanager.rules.engine import seed_rules_from_canonical
+from tagmanager.scanner import reap_stale_runs
 from tagmanager.scheduler import build_scheduler
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -45,7 +46,14 @@ def _scopes_loader(session_maker):
 
 
 def main():
-    """Boot TagManager: DB, rules seed, scheduler, web server."""
+    """
+    Boot TagManager: DB, rules seed, stale-run reap, scheduler, web server.
+
+    The stale-run reap runs once at boot, before the scheduler starts —
+    safe only under the single-replica assumption (see
+    scanner.reap_stale_runs), since two replicas booting at once could
+    otherwise reap a run that's genuinely in progress on the other one.
+    """
     settings = get_settings()
     LOG.info("starting tagmanager...")
     engine = get_engine(settings.db_url)
@@ -53,7 +61,17 @@ def main():
     maker = session_factory(engine)
 
     if os.path.exists("canonical.json"):
-        seed_rules_from_canonical(maker(), "canonical.json")
+        session = maker()
+        try:
+            seed_rules_from_canonical(session, "canonical.json")
+        finally:
+            session.close()
+
+    session = maker()
+    try:
+        reap_stale_runs(session)
+    finally:
+        session.close()
 
     providers = {"aws": AwsProvider(), "azure": AzureProvider(),
                  "gcp": GcpProvider()}

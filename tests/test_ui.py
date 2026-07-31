@@ -174,3 +174,57 @@ def test_violations_filter_by_cloud():
     azure_body = client.get("/violations?cloud=azure").text
     assert "azure-web" in azure_body
     assert "aws-web" not in azure_body
+
+
+def test_violations_page_scoped_to_latest_run_by_default():
+    """Violations page defaults to the latest run's findings only, matching
+    the rest of the dashboard; ?all=1 shows every run's findings."""
+    engine = create_engine("sqlite:///:memory:",
+                           connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    create_all(engine)
+    maker = session_factory(engine)
+    session = maker()
+
+    res1 = Resource(cloud="aws", scope_id="acc1", region="us-east-1",
+                    rtype="ec2:instance", resource_id="arn:i-1",
+                    name="old-web", tags={})
+    run1 = ScanRun(status="complete", resources_seen=1, violation_count=1,
+                   skips=[])
+    session.add_all([res1, run1])
+    session.commit()
+    session.add(Violation(scan_run_id=run1.id, resource_pk=res1.id,
+                          rule_key="owner", value="", issue="missing"))
+    session.commit()
+
+    res2 = Resource(cloud="aws", scope_id="acc1", region="us-east-1",
+                    rtype="ec2:instance", resource_id="arn:i-2",
+                    name="new-web", tags={})
+    run2 = ScanRun(status="complete", resources_seen=1, violation_count=1,
+                   skips=[])
+    session.add_all([res2, run2])
+    session.commit()
+    session.add(Violation(scan_run_id=run2.id, resource_pk=res2.id,
+                          rule_key="owner", value="", issue="missing"))
+    session.commit()
+
+    client = TestClient(create_app(Settings(auth_mode="none"), maker))
+
+    default_body = client.get("/violations").text
+    assert "new-web" in default_body
+    assert "old-web" not in default_body
+
+    all_body = client.get("/violations?all=1").text
+    assert "new-web" in all_body and "old-web" in all_body
+
+
+def test_violations_page_empty_when_no_runs():
+    """No scan runs yet: violations page shows no findings, not an error."""
+    engine = create_engine("sqlite:///:memory:",
+                           connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    create_all(engine)
+    maker = session_factory(engine)
+    client = TestClient(create_app(Settings(auth_mode="none"), maker))
+    resp = client.get("/violations")
+    assert resp.status_code == 200

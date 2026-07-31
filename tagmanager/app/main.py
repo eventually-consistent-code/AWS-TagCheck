@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tagmanager.app.auth import install_auth
+from tagmanager.app.queries import violations_query
 from tagmanager.app.ui import ui_router
 from tagmanager.models.tables import Resource, ScanRun, Violation
 
@@ -65,12 +66,12 @@ def create_app(settings, session_maker):
                 for r in rows]
 
     @app.get("/api/violations")
-    def violations(cloud: str = "", rule_key: str = "", session=Depends(db)):
-        """Violation listing joined to resources."""
-        query = (session.query(Violation, Resource)
-                 .join(Resource, Violation.resource_pk == Resource.id))
-        if cloud:
-            query = query.filter(Resource.cloud == cloud)
+    def violations(  # pylint: disable=redefined-builtin
+            cloud: str = "", rule_key: str = "", all: int = 0,
+            session=Depends(db)):
+        """Violation listing joined to resources — latest run only unless
+        ?all=1, matching the UI's /violations scoping."""
+        query = violations_query(session, cloud, latest_only=not all)
         if rule_key:
             query = query.filter(Violation.rule_key == rule_key)
         return [{"resource_id": res.resource_id, "name": res.name,

@@ -38,6 +38,31 @@ def _upsert(session, run, normalized):
     return row
 
 
+def reap_stale_runs(session):
+    """
+    Mark any leftover status="running" ScanRun rows as "partial" at boot.
+
+    Safe under the single-replica assumption for this service (see
+    scheduler.py): only one process ever writes ScanRun rows, so a
+    "running" row found at startup can only be left over from a process
+    that crashed or was killed mid-scan — it is never a scan actually in
+    flight right now, because that would require a second replica racing
+    this one. Left unreaped, the scheduler's overlap guard
+    (`filter_by(status="running")`) would skip every future tick forever.
+
+    :param session: SQLAlchemy session
+    :returns: number of rows reaped
+    """
+    stale = session.query(ScanRun).filter_by(status="running").all()
+    for run in stale:
+        run.status = "partial"
+        run.finished_at = datetime.datetime.now(datetime.timezone.utc)
+    if stale:
+        session.commit()
+        LOG.info("reaped %s stale scan run(s)...", len(stale))
+    return len(stale)
+
+
 def run_scan(session, providers, scopes):
     """
     Run one scan across every scope; one failing scope becomes a skip.
@@ -56,9 +81,11 @@ def run_scan(session, providers, scopes):
     skips = []
 
     for scope in scopes:
-        provider = providers[scope.cloud]
-        LOG.info("scanning %s scope %s...", scope.cloud, scope.scope_id)
         try:
+            # provider lookup lives inside the try too — an unconfigured
+            # cloud is a per-scope skip, not a run-aborting KeyError
+            provider = providers[scope.cloud]
+            LOG.info("scanning %s scope %s...", scope.cloud, scope.scope_id)
             for normalized in provider.list_resources(scope):
                 seen += 1
                 row = _upsert(session, run, normalized)

@@ -59,3 +59,57 @@ def test_violations_and_scans():
     assert violations[0]["rule_key"] == "Environment"
     scans = client.get("/api/scans").json()
     assert scans[0]["status"] == "complete"
+
+
+def test_violations_default_scoped_to_latest_run():
+    """/api/violations defaults to the latest run's findings; ?all=1 returns
+    every run's findings, matching the UI's /violations behavior."""
+    engine = create_engine("sqlite:///:memory:",
+                           connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    create_all(engine)
+    maker = session_factory(engine)
+    session = maker()
+
+    res1 = Resource(cloud="aws", scope_id="1", region="us-east-1",
+                    rtype="ec2:instance", resource_id="arn:i-old",
+                    name="old-web", tags={})
+    run1 = ScanRun(status="complete", resources_seen=1, violation_count=1,
+                   skips=[])
+    session.add_all([res1, run1])
+    session.commit()
+    session.add(Violation(scan_run_id=run1.id, resource_pk=res1.id,
+                          rule_key="Environment", value="nope",
+                          issue="invalid"))
+    session.commit()
+
+    res2 = Resource(cloud="aws", scope_id="1", region="us-east-1",
+                    rtype="ec2:instance", resource_id="arn:i-new",
+                    name="new-web", tags={})
+    run2 = ScanRun(status="complete", resources_seen=1, violation_count=1,
+                   skips=[])
+    session.add_all([res2, run2])
+    session.commit()
+    session.add(Violation(scan_run_id=run2.id, resource_pk=res2.id,
+                          rule_key="Environment", value="nope",
+                          issue="invalid"))
+    session.commit()
+
+    client = TestClient(create_app(Settings(auth_mode="none"), maker))
+
+    default_hits = client.get("/api/violations").json()
+    assert len(default_hits) == 1 and default_hits[0]["name"] == "new-web"
+
+    all_hits = client.get("/api/violations?all=1").json()
+    assert len(all_hits) == 2
+
+
+def test_violations_empty_when_no_runs():
+    """No scan runs yet: /api/violations returns an empty list."""
+    engine = create_engine("sqlite:///:memory:",
+                           connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    create_all(engine)
+    maker = session_factory(engine)
+    client = TestClient(create_app(Settings(auth_mode="none"), maker))
+    assert client.get("/api/violations").json() == []

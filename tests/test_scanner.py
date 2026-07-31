@@ -4,14 +4,14 @@ Author(s): John Reed
 """
 
 from tagmanager.models.base import create_all, get_engine, session_factory
-from tagmanager.models.tables import Resource, RuleRow, Violation
+from tagmanager.models.tables import Resource, RuleRow, ScanRun, Violation
 from tagmanager.providers.base import (
     NormalizedResource,
     Provider,
     ProviderCapabilities,
     ScopeConfig,
 )
-from tagmanager.scanner import run_scan
+from tagmanager.scanner import reap_stale_runs, run_scan
 
 
 class _StubProvider(Provider):
@@ -109,3 +109,46 @@ def test_scope_failure_isolated_as_skip():
     assert run.status == "partial"
     assert run.skips == [{"scope_id": "bad", "error": "denied"}]
     assert run.resources_seen == 1
+
+
+def test_unconfigured_cloud_provider_is_skipped_not_fatal():
+    """A scope whose cloud has no configured provider becomes a skip; the
+    run still finishes instead of aborting with an unhandled KeyError."""
+    session = _session()
+    scope = ScopeConfig(cloud="nocloud", scope_id="x1", credentials={})
+
+    run = run_scan(session, {}, [scope])
+
+    assert run.status == "partial"
+    assert run.skips == [{"scope_id": "x1", "error": "'nocloud'"}]
+    assert run.resources_seen == 0
+
+
+def test_reap_stale_runs_marks_running_rows_as_partial():
+    """Boot-time reaper flips any leftover "running" ScanRun rows to
+    "partial" so a crashed process doesn't permanently block the scheduler's
+    overlap guard."""
+    session = _session()
+    stale = ScanRun(status="running", skips=[])
+    session.add(stale)
+    session.commit()
+    stale_id = stale.id
+
+    reaped = reap_stale_runs(session)
+
+    assert reaped == 1
+    refreshed = session.query(ScanRun).filter_by(id=stale_id).one()
+    assert refreshed.status == "partial"
+    assert refreshed.finished_at is not None
+
+
+def test_reap_stale_runs_ignores_finished_rows():
+    """Rows already complete/partial are left untouched by the reaper."""
+    session = _session()
+    session.add(ScanRun(status="complete", skips=[]))
+    session.commit()
+
+    reaped = reap_stale_runs(session)
+
+    assert reaped == 0
+    assert session.query(ScanRun).one().status == "complete"
