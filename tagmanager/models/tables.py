@@ -6,7 +6,7 @@ Author(s): John Reed
 import datetime
 
 from sqlalchemy import (JSON, BigInteger, Boolean, DateTime, ForeignKey,
-                        Integer, String, UniqueConstraint)
+                        Index, Integer, String, UniqueConstraint, text)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tagmanager.models.base import Base
@@ -117,6 +117,51 @@ class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods
     small_object_count: Mapped[int] = mapped_column(BigInteger, default=0)
     small_object_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     owner: Mapped[str] = mapped_column(String(256), default="")
+
+
+class StorageTarget(Base):  # pylint: disable=too-few-public-methods
+    """One configured storage scan target (Scope pattern for storage)."""
+
+    __tablename__ = "storage_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    backend: Mapped[str] = mapped_column(String(16), default="s3")
+    account_url: Mapped[str] = mapped_column(String(256), default="")
+    # Bucket/container names; for the fs backend these are root paths.
+    buckets: Mapped[list] = mapped_column(JSON, default=list)
+    prefix: Mapped[str] = mapped_column(String(1024), default="")
+    age_band_days: Mapped[list] = mapped_column(JSON, default=list)
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    display_name: Mapped[str] = mapped_column(String(128), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class StorageJob(Base):  # pylint: disable=too-few-public-methods
+    """One user-triggered storage scan job: intent + lifecycle."""
+
+    __tablename__ = "storage_jobs"
+    # One active job per target — concurrent submits race to insert and
+    # the loser's IntegrityError IS the overlap refusal (no held locks).
+    __table_args__ = (
+        Index("uq_storage_job_active_target", "target_id", unique=True,
+              sqlite_where=text("state IN ('queued', 'running')"),
+              postgresql_where=text("state IN ('queued', 'running')")),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("storage_targets.id"))
+    state: Mapped[str] = mapped_column(String(16), default="queued")
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    objects_seen: Mapped[int] = mapped_column(BigInteger, default=0)
+    error: Mapped[str] = mapped_column(String(1024), default="")
+    scan_run_id: Mapped[int] = mapped_column(
+        ForeignKey("storage_scan_runs.id"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=_utc_now)
+    started_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=True)
+    finished_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=True)
 
 
 class Scope(Base):  # pylint: disable=too-few-public-methods

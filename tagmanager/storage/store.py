@@ -75,14 +75,18 @@ def schema_current(engine):
     :param engine: SQLAlchemy engine
     :returns: True when storage_prefix_stats has the current columns
     """
+    inspector = inspect(engine)
     stat_columns = {col["name"] for col in
-                    inspect(engine).get_columns("storage_prefix_stats")}
+                    inspector.get_columns("storage_prefix_stats")}
     run_columns = {col["name"] for col in
-                   inspect(engine).get_columns("storage_scan_runs")}
+                   inspector.get_columns("storage_scan_runs")}
+    job_columns = {col["name"] for col in
+                   inspector.get_columns("storage_jobs")}
     return ({"small_object_count", "small_object_bytes",
              "owner"}.issubset(stat_columns)
             and {"access_aware", "artifacts",
-                 "structure_recs"}.issubset(run_columns))
+                 "structure_recs"}.issubset(run_columns)
+            and "cancel_requested" in job_columns)
 
 
 def stats_for_run(session, run_id):

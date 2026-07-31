@@ -20,6 +20,8 @@ from tagmanager.providers.gcp_provider import GcpProvider
 from tagmanager.rules.engine import seed_rules_from_canonical
 from tagmanager.scanner import reap_stale_runs
 from tagmanager.scheduler import build_scheduler
+from tagmanager.storage.jobs import (register_storage_executor,
+                                     sweep_orphan_jobs)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.serve")
@@ -70,6 +72,7 @@ def main():
     session = maker()
     try:
         reap_stale_runs(session)
+        sweep_orphan_jobs(session)
     finally:
         session.close()
 
@@ -77,6 +80,7 @@ def main():
                  "gcp": GcpProvider()}
     scheduler = build_scheduler(settings, maker, providers,
                                 _scopes_loader(maker))
+    register_storage_executor(scheduler)
     scheduler.start()
 
     app = create_app(settings, maker)
