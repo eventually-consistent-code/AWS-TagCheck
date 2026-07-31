@@ -310,8 +310,9 @@
         "milestone-5",
         "web-app"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T13:24:53Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T14:21:45Z"
     },
     "42": {
       "title": "Scan targets config + async scan jobs",
