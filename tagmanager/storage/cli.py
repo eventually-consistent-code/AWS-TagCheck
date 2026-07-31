@@ -7,10 +7,12 @@ Author(s): John Reed
 
 import argparse
 import csv
+import glob as globlib
 import json
 import logging
 import pathlib
 import sys
+from dataclasses import dataclass
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -26,6 +28,7 @@ from tagmanager.storage.tiering_gen import (TIERING_APPLY_NOTE,
                                             build_tiering_configs)
 from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.projections import project_options
+from tagmanager.storage.access_log import load_access_index
 from tagmanager.storage.azure_provider import AzureBlobStorageProvider
 from tagmanager.storage.fs_provider import FilesystemStorageProvider
 from tagmanager.storage.gcs_provider import GcsStorageProvider
@@ -112,10 +115,22 @@ def parse_args(argv):
     parser.add_argument("--emit-batch-copy", default="", metavar="DIR",
                         help="scan mode only: stream stale objects into "
                              "S3 Batch Operations copy manifests (CSV)")
+    parser.add_argument("--access-logs", default="", metavar="GLOB",
+                        help="scan mode only: local S3 server-access-log "
+                             "files to fold into a last-read index "
+                             "(ages become access-aware lower bounds)")
     return parser.parse_args(argv)
 
 
-def scan_buckets(provider, buckets, prefix, builder, emitters=()):
+@dataclass
+class ScanExtras:
+    """Optional per-object hooks riding along on a scan."""
+
+    emitters: tuple = ()
+    access_index: dict = None
+
+
+def scan_buckets(provider, buckets, prefix, builder, extras=None):
     """
     Stream every bucket through the rollup builder, isolating failures.
 
@@ -123,15 +138,21 @@ def scan_buckets(provider, buckets, prefix, builder, emitters=()):
     :param buckets: list of bucket names
     :param prefix: key prefix scope
     :param builder: RollupBuilder
-    :param emitters: streaming manifest emitters offered every object
+    :param extras: ScanExtras — manifest emitters offered every object,
+        and an optional {(bucket, key): last-read} enrichment index
     :returns: list of skip records for buckets that failed
     """
+    extras = extras or ScanExtras()
     skips = []
     for bucket in buckets:
         try:
             for obj in provider.list_objects(bucket, prefix=prefix):
+                if (extras.access_index is not None
+                        and obj.last_accessed is None):
+                    obj.last_accessed = extras.access_index.get(
+                        (obj.container, obj.key))
                 builder.add(obj)
-                for emitter in emitters:
+                for emitter in extras.emitters:
                     emitter.offer(obj)
             LOG.info("%s complete...", bucket)
         except (ClientError, BotoCoreError, OSError) as err:
@@ -171,7 +192,11 @@ def print_summary(builder):
     print("***********************************")
     print(f"objects: {builder.objects_seen}   "
           f"total: {_fmt_bytes(builder.bytes_seen)}")
-    print("(age = last modified; last-accessed enrichment lands in phase 4)")
+    if builder.access_aware:
+        print("(age = access-aware — newest of modified/read; access times "
+              "are lower bounds)")
+    else:
+        print("(age = last modified only — no access telemetry seen)")
     print()
 
     totals = builder.band_totals()
@@ -328,6 +353,8 @@ def _run_projections(session, run, args):
         LOG.error("%s", err)
         return 4
     print_projections(projections)
+    if run.access_aware:
+        print("(ages in this run are access-aware lower bounds)")
     if args.savings_csv:
         write_savings_csv(args.savings_csv, projections)
         print(f"savings csv saved to {args.savings_csv}.")
@@ -426,6 +453,8 @@ def _run_cost_report(session, run, args):
         return 4
     report = build_cost_report(stats_for_run(session, run.id), pricing)
     print_cost_report(report)
+    if run.access_aware:
+        print("(ages in this run are access-aware lower bounds)")
     if args.cost_csv:
         write_cost_csv(args.cost_csv, report)
         print(f"cost csv saved to {args.cost_csv}.")
@@ -712,9 +741,22 @@ def _scan(settings, args, provider):
         emitters.append(BatchCopyEmitter(
             args.emit_batch_copy, stale_after_days=age_band_days[-1]))
 
+    access_index = None
+    if args.access_logs:
+        log_files = sorted(globlib.glob(args.access_logs))
+        if not log_files:
+            LOG.error("--access-logs matched no files: %r", args.access_logs)
+            return 4
+        print("loading access logs...")
+        access_index, used = load_access_index(log_files)
+        print(f"access index ready: {used} read event(s), "
+              f"{len(access_index)} key(s). ages become access-aware "
+              "lower bounds (log delivery is best-effort, hours of lag).")
+
     print("scanning storage...")
     skips = scan_buckets(provider, args.bucket, args.prefix, builder,
-                         emitters=emitters)
+                         extras=ScanExtras(emitters=tuple(emitters),
+                                           access_index=access_index))
 
     run = persist_rollups(session, builder, backend=provider.backend_name,
                           skips=skips)

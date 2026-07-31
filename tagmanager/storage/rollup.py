@@ -104,18 +104,31 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
 
         self.objects_seen = 0
         self.bytes_seen = 0
+        self.access_aware_count = 0
         self._cells = {}
         self._largest = []
         self._oldest = []
         self._seq = 0
 
+    @property
+    def access_aware(self):
+        """Whether any folded object carried a last-accessed timestamp."""
+        return self.access_aware_count > 0
+
     def add(self, obj):
         """
         Fold one StorageObject into the rollups and samples.
 
+        Age basis is the NEWEST of last-modified and last-accessed — a
+        read-hot, never-edited object stays in the fresh band.
+
         :param obj: StorageObject
         """
-        band = classify_age(obj.last_modified, self.now, self.age_band_days)
+        effective = obj.last_modified
+        if obj.last_accessed is not None:
+            self.access_aware_count += 1
+            effective = max(effective, obj.last_accessed)
+        band = classify_age(effective, self.now, self.age_band_days)
         prefix = prefix_at_depth(obj.key, self.prefix_depth)
         cell_key = (obj.container, prefix, obj.storage_class, band)
 

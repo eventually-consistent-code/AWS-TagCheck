@@ -93,6 +93,7 @@ class StorageScanRun(Base):  # pylint: disable=too-few-public-methods
     bytes_seen: Mapped[int] = mapped_column(BigInteger, default=0)
     age_band_days: Mapped[list] = mapped_column(JSON, default=list)
     skips: Mapped[list] = mapped_column(JSON, default=list)
+    access_aware: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods

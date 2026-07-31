@@ -37,6 +37,7 @@ def persist_rollups(session, builder, backend, skips=None):
         bytes_seen=builder.bytes_seen,
         age_band_days=list(builder.age_band_days),
         skips=list(skips or []),
+        access_aware=builder.access_aware,
     )
     session.add(run)
     session.flush()
@@ -72,9 +73,12 @@ def schema_current(engine):
     :param engine: SQLAlchemy engine
     :returns: True when storage_prefix_stats has the current columns
     """
-    columns = {col["name"] for col in
-               inspect(engine).get_columns("storage_prefix_stats")}
-    return {"small_object_count", "small_object_bytes"}.issubset(columns)
+    stat_columns = {col["name"] for col in
+                    inspect(engine).get_columns("storage_prefix_stats")}
+    run_columns = {col["name"] for col in
+                   inspect(engine).get_columns("storage_scan_runs")}
+    return ({"small_object_count", "small_object_bytes"}.issubset(stat_columns)
+            and "access_aware" in run_columns)
 
 
 def stats_for_run(session, run_id):
