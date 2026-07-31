@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tagmanager
+      POSTGRES_PASSWORD: tagmanager
+      POSTGRES_DB: tagmanager
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tagmanager -d tagmanager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  app:
+    build: .
+    ports: ["8080:8080"]
+    environment:
+      TAGMANAGER_DB_URL: postgresql+psycopg://tagmanager:tagmanager@db/tagmanager
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

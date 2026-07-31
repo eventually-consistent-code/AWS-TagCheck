@@ -14,6 +14,19 @@ authors = [
 ]
 dependencies = [
   "boto3>=1.34",
+  "azure-identity>=1.16",
+  "azure-mgmt-resourcegraph>=8.0",
+  "google-cloud-asset>=3.24",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "sqlalchemy>=2.0",
+  "jinja2>=3.1",
+  "apscheduler>=3.10",
+  "authlib>=1.3",
+  "pydantic-settings>=2.2",
+  "httpx>=0.27",
+  "itsdangerous>=2.1",
+  "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -21,13 +34,19 @@ dev = [
   "pytest>=8.0",
   "pylint>=3.0",
   "pycodestyle>=2.11",
+  "pytest-httpx>=0.21",
 ]
 
 [project.scripts]
 aws-tag-manager = "aws_tag_manager:main"
+tagmanager-serve = "tagmanager.serve:main"
 
 [tool.setuptools]
+packages = ["tagmanager", "tagmanager.app", "tagmanager.models", "tagmanager.providers", "tagmanager.rules"]
 py-modules = ["aws_tag_manager", "aws"]
+
+[tool.setuptools.package-data]
+tagmanager = ["app/templates/*.html", "app/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

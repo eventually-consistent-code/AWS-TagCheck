@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Latest scan</h2>
+{% if run %}
+<p>Status: <strong>{{ run.status }}</strong> —
+   {{ run.resources_seen }} resource(s), {{ run.violation_count }} violation(s),
+   {{ run.skips | length }} skip(s)</p>
+<p>Compliance: {{ compliance_pct }}%</p>
+{% else %}<p>No scans yet.</p>{% endif %}
+<h2>Resources by cloud</h2>
+<table>
+  <tr><th>Cloud</th><th>Count</th></tr>
+  {% for cloud, count in by_cloud %}
+  <tr><td>{{ cloud }}</td><td>{{ count }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

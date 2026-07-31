@@ -71,6 +71,41 @@ was clean, the run exits 4 so CI notices the missing report.
   pytest
   ./static_analysis.sh
 
+## Platform (web UI)
+
+  docker compose up
+
+The web UI runs at http://localhost:8080 and provides a read-only dashboard to
+browse tags across cloud providers. Database defaults to SQLite; to use
+PostgreSQL, pass TAGMANAGER_DB_URL as an environment variable.
+
+Configuration:
+  TAGMANAGER_DB_URL              database connection URL (default:
+                                 sqlite:///tagmanager.db, file-backed);
+                                 use postgresql+psycopg:// for PostgreSQL
+  TAGMANAGER_AUTH_MODE           "none" (default) or "oidc"
+  TAGMANAGER_OIDC_ISSUER         OpenID Connect issuer URL (required if
+                                 AUTH_MODE=oidc); app derives discovery
+                                 endpoint itself
+  TAGMANAGER_OIDC_CLIENT_ID      OIDC client ID (required if AUTH_MODE=oidc)
+  TAGMANAGER_OIDC_CLIENT_SECRET  OIDC client secret (required if AUTH_MODE=oidc)
+  TAGMANAGER_SCAN_INTERVAL_MINUTES  how often to scan clouds (default: 60)
+  TAGMANAGER_SESSION_SECRET      secret key for signing session cookies. If
+                                 unset, a random secret is generated per
+                                 boot — that's fine for a quick local run,
+                                 but it means every restart invalidates all
+                                 logged-in sessions. Set this explicitly for
+                                 anything long-lived so restarts/redeploys
+                                 don't boot everyone out.
+  TAGMANAGER_AWS_ROLE_<account_id>  assume-role ARN for an AWS scope. For a
+                                 Scope row with cloud="aws" and
+                                 scope_id="<account_id>", set this to the
+                                 role ARN the scanner should assume in that
+                                 account; e.g. TAGMANAGER_AWS_ROLE_123456789012
+                                 sets the role for scope_id "123456789012".
+                                 Leave unset to use the default credential
+                                 chain with no assume-role hop.
+
 ## TODO
 
   # - decide what an empty tag_value in the CSV means (today it overwrites

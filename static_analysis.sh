@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-TARGETS="aws.py aws_tag_manager.py"
+TARGETS="aws.py aws_tag_manager.py tagmanager"
 
 echo "Running pylint..."
 pylint --rcfile pylintrc ${TARGETS}
