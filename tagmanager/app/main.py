@@ -8,6 +8,7 @@ import logging
 
 from fastapi import Depends, FastAPI
 
+from tagmanager.app.auth import install_auth
 from tagmanager.models.tables import Resource, ScanRun, Violation
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -83,4 +84,5 @@ def create_app(settings, session_maker):
                 for r in rows]
 
     app.state.settings = settings
+    install_auth(app, settings)
     return app
