@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<table>
+  <tr><th>Cloud</th><th>Resource</th><th>Rule</th><th>Value</th><th>Issue</th></tr>
+  {% for v, res in rows %}
+  <tr><td>{{ res.cloud }}</td><td>{{ res.name }}</td>
+      <td>{{ v.rule_key }}</td><td>{{ v.value }}</td><td>{{ v.issue }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

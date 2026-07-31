@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="get">
+  <input name="cloud" placeholder="cloud" value="{{ cloud }}">
+  <input name="rtype" placeholder="type" value="{{ rtype }}">
+  <button>Filter</button>
+</form>
+<table>
+  <tr><th>Cloud</th><th>Scope</th><th>Region</th><th>Type</th><th>Name</th><th>Tags</th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.cloud }}</td><td>{{ r.scope_id }}</td><td>{{ r.region }}</td>
+      <td>{{ r.rtype }}</td><td>{{ r.name }}</td><td>{{ r.tags }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

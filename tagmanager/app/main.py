@@ -5,10 +5,14 @@ Author(s): John Reed
 """
 
 import logging
+import pathlib
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from tagmanager.app.auth import install_auth
+from tagmanager.app.ui import ui_router
 from tagmanager.models.tables import Resource, ScanRun, Violation
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -82,6 +86,12 @@ def create_app(settings, session_maker):
                  "status": r.status, "resources_seen": r.resources_seen,
                  "violation_count": r.violation_count, "skips": r.skips}
                 for r in rows]
+
+    templates = Jinja2Templates(
+        directory=str(pathlib.Path(__file__).parent / "templates"))
+    app.mount("/static", StaticFiles(
+        directory=str(pathlib.Path(__file__).parent / "static")), name="static")
+    app.include_router(ui_router(templates, session_maker))
 
     app.state.settings = settings
     install_auth(app, settings)

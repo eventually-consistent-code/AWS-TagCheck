@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TagManager</title>
+  <script src="/static/htmx.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; }
+    td, th { border: 1px solid #999; padding: 4px 8px; }
+    nav a { margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>TagManager</h1>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/resources">Resources</a>
+    <a href="/violations">Violations</a>
+  </nav>
+  <hr>
+  {% block content %}{% endblock %}
+</body>
+</html>
