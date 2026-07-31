@@ -16,6 +16,7 @@ dependencies = [
   "boto3>=1.34",
   "azure-identity>=1.16",
   "azure-mgmt-resourcegraph>=8.0",
+  "google-cloud-asset>=3.24",
   "fastapi>=0.110",
   "uvicorn>=0.29",
   "sqlalchemy>=2.0",
