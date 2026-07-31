@@ -149,19 +149,21 @@ class PricingTable:
         return over["standard_billed_bytes"], over["archive_billed_bytes"]
 
 
-def load_pricing(provider="s3", region="us-east-1"):
+def load_pricing(provider="s3", region=None):
     """
-    Load the checked-in pricing snapshot for a provider+region.
+    Load the checked-in pricing snapshot for a provider.
 
     :param provider: backend name
-    :param region: region the snapshot was captured for
+    :param region: optional region pin — None accepts whatever region the
+        shipped snapshot covers
     :returns: PricingTable
-    :raises FileNotFoundError: no snapshot shipped for that combination
+    :raises FileNotFoundError: no snapshot for the provider, or a region
+        pin the snapshot doesn't cover
     """
     path = DATA_DIR / f"{provider}_pricing.json"
     with open(path, encoding="utf-8") as handle:
         snapshot = json.load(handle)
-    if snapshot["region"] != region:
+    if region is not None and snapshot["region"] != region:
         raise FileNotFoundError(
             f"snapshot at {path} covers {snapshot['region']}, not {region} — "
             "run pricing_refresh for that region")

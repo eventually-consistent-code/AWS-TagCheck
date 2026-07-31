@@ -169,8 +169,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:37Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T11:15:21Z"
     },
     "27": {
       "title": "SMB/local filesystem scanner",
@@ -183,12 +184,12 @@
     },
     "28": {
       "title": "Access enrichment — last-READ signals where available",
-      "bodyHash": "10e7c2d19271e99f",
+      "bodyHash": "6d68e6348f118f1b",
       "labels": [
         "milestone-4"
       ],
       "state": "open",
-      "updatedAt": "2026-07-31T09:11:41Z"
+      "updatedAt": "2026-07-31T11:11:45Z"
     },
     "29": {
       "title": "Structure recommendation engine",

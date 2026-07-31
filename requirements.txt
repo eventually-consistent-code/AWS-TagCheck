@@ -1,1 +1,6 @@
 boto3>=1.34
+
+# Optional storage backends (lazy-imported; install only what you scan):
+# azure-storage-blob>=12.19   # --backend azure
+# azure-identity>=1.15        # --backend azure
+# google-cloud-storage>=2.14  # --backend gcs

@@ -22,6 +22,7 @@ class StorageObject:  # pylint: disable=too-many-instance-attributes
     storage_class: str = "STANDARD"
     owner: str = ""
     region: str = ""
+    last_accessed: datetime.datetime = None
 
 
 @dataclass

@@ -1,0 +1,51 @@
+{
+  "provider": "azure",
+  "region": "eastus",
+  "currency": "USD",
+  "as_of_date": "2026-07-31",
+  "source": "https://azure.microsoft.com/en-us/pricing/details/storage/blobs/ (Cold rate corroborated by secondary sources; JS-rendered page — re-verify at refresh)",
+  "classes": {
+    "HOT": {
+      "tier_ranges_gb": [[0, 51200, 0.018], [51200, 512000, 0.0173], [512000, null, 0.0166]],
+      "min_duration_days": 0,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.0,
+      "transition_in_per_1000": null
+    },
+    "COOL": {
+      "rate_per_gb_month": 0.01,
+      "min_duration_days": 30,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.01,
+      "transition_in_per_1000": 0.01
+    },
+    "COLD": {
+      "rate_per_gb_month": 0.0045,
+      "min_duration_days": 90,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.03,
+      "transition_in_per_1000": 0.018
+    },
+    "ARCHIVE": {
+      "rate_per_gb_month": 0.00099,
+      "min_duration_days": 180,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.02,
+      "transition_in_per_1000": 0.011
+    }
+  },
+  "intelligent_tiering": {
+    "monitoring_per_1000_objects_month": 0.0,
+    "small_object_floor_bytes": 0,
+    "tier_rates": {}
+  },
+  "archive_overhead": {
+    "standard_billed_bytes": 0,
+    "archive_billed_bytes": 0
+  },
+  "requests_per_1000": {
+    "standard_put": 0.0065,
+    "standard_get": 0.0005
+  },
+  "notes": "Cold-tier rate soft-confirmed (secondary sources, 2026); early deletion prorated below minimum durations; Hot volume-break rates approximate the 50/500 TB ladder."
+}

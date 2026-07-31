@@ -26,6 +26,8 @@ from tagmanager.storage.tiering_gen import (TIERING_APPLY_NOTE,
                                             build_tiering_configs)
 from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.projections import project_options
+from tagmanager.storage.azure_provider import AzureBlobStorageProvider
+from tagmanager.storage.gcs_provider import GcsStorageProvider
 from tagmanager.storage.rollup import RollupBuilder, band_labels
 from tagmanager.storage.s3_provider import S3StorageProvider
 from tagmanager.storage.store import (latest_complete_run, persist_rollups,
@@ -63,9 +65,15 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog="tagmanager-storage-scan",
         description="Scan mass storage, band objects by age, report rollups.")
+    parser.add_argument("--backend", default="s3",
+                        choices=["s3", "azure", "gcs"],
+                        help="storage backend to scan/analyze (default s3)")
+    parser.add_argument("--account-url", default="",
+                        help="azure backend: "
+                             "https://<account>.blob.core.windows.net")
     parser.add_argument("--bucket", action="append",
-                        help="bucket to scan (repeatable; omit with "
-                             "--cost-report to price the latest saved run)")
+                        help="bucket/container to scan (repeatable; omit "
+                             "with --cost-report to price the latest run)")
     parser.add_argument("--prefix", default="",
                         help="only scan keys under this prefix")
     parser.add_argument("--age-bands", default="",
@@ -299,9 +307,11 @@ def _run_projections(session, run, args):
     :param session: SQLAlchemy session
     :param run: StorageScanRun to project from
     :param args: parsed CLI namespace
-    :returns: exit code — 0 OK, 4 bad override map
+    :returns: exit code — 0 OK, 4 bad override map or no pricing
     """
-    pricing = load_pricing(provider="s3")
+    pricing = _load_backend_pricing(run.backend)
+    if pricing is None:
+        return 4
     try:
         band_targets = _parse_age_out_map(args.age_out_map)
         for sclass in (band_targets or {}).values():
@@ -407,9 +417,11 @@ def _run_cost_report(session, run, args):
     :param session: SQLAlchemy session
     :param run: StorageScanRun to price
     :param args: parsed CLI namespace
-    :returns: exit code — 0 OK
+    :returns: exit code — 0 OK, 4 no pricing for the backend
     """
-    pricing = load_pricing(provider="s3")
+    pricing = _load_backend_pricing(run.backend)
+    if pricing is None:
+        return 4
     report = build_cost_report(stats_for_run(session, run.id), pricing)
     print_cost_report(report)
     if args.cost_csv:
@@ -429,7 +441,7 @@ def _analyze_latest(settings, args):
     session = _open_session(settings)
     if session is None:
         return 4
-    run = latest_complete_run(session, backend="s3")
+    run = latest_complete_run(session, backend=args.backend)
     if run is None:
         LOG.error("no saved storage scan runs — scan first with --bucket")
         return 4
@@ -575,6 +587,41 @@ def _post_scan_outputs(session, run, args):
     return 0
 
 
+def _make_provider(args):
+    """
+    Build the provider for the selected backend.
+
+    :param args: parsed CLI namespace
+    :returns: StorageProvider, or None on config error
+    """
+    try:
+        if args.backend == "azure":
+            if not args.account_url:
+                LOG.error("azure backend needs --account-url")
+                return None
+            return AzureBlobStorageProvider(args.account_url)
+        if args.backend == "gcs":
+            return GcsStorageProvider()
+        return S3StorageProvider()
+    except RuntimeError as err:
+        LOG.error("%s", err)
+        return None
+
+
+def _load_backend_pricing(backend):
+    """
+    Pricing snapshot for a backend, or None with a message.
+
+    :param backend: backend name
+    :returns: PricingTable or None
+    """
+    try:
+        return load_pricing(provider=backend)
+    except FileNotFoundError as err:
+        LOG.error("no pricing snapshot for backend %r: %s", backend, err)
+        return None
+
+
 def _resolve_age_bands(args, settings):
     """
     Age thresholds from the flag or settings; None on bad input.
@@ -620,7 +667,18 @@ def main(argv=None, provider=None):
 
     if not args.bucket:
         return _analyze_latest(settings, args)
+    return _scan(settings, args, provider)
 
+
+def _scan(settings, args, provider):
+    """
+    Scan mode: walk buckets, persist rollups, run requested outputs.
+
+    :param settings: Settings
+    :param args: parsed CLI namespace
+    :param provider: StorageProvider override for tests (None = build one)
+    :returns: exit code — 0 OK, 4 config error
+    """
     age_band_days = _resolve_age_bands(args, settings)
     if age_band_days is None:
         return 4
@@ -628,7 +686,10 @@ def main(argv=None, provider=None):
     prefix_depth = (args.prefix_depth if args.prefix_depth is not None
                     else settings.storage_prefix_depth)
 
-    provider = provider or S3StorageProvider()
+    if provider is None:
+        provider = _make_provider(args)
+        if provider is None:
+            return 4
     builder = RollupBuilder(age_band_days=age_band_days,
                             prefix_depth=prefix_depth)
 
