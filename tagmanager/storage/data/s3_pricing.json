@@ -1,0 +1,77 @@
+{
+  "provider": "s3",
+  "region": "us-east-1",
+  "currency": "USD",
+  "as_of_date": "2026-07-28",
+  "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+  "classes": {
+    "STANDARD": {
+      "tier_ranges_gb": [[0, 51200, 0.023], [51200, 512000, 0.022], [512000, null, 0.021]],
+      "min_duration_days": 0,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.0,
+      "transition_in_per_1000": null
+    },
+    "STANDARD_IA": {
+      "rate_per_gb_month": 0.0125,
+      "min_duration_days": 30,
+      "min_billable_bytes": 131072,
+      "retrieval_per_gb": 0.01,
+      "transition_in_per_1000": 0.01
+    },
+    "ONEZONE_IA": {
+      "rate_per_gb_month": 0.01,
+      "min_duration_days": 30,
+      "min_billable_bytes": 131072,
+      "retrieval_per_gb": 0.01,
+      "transition_in_per_1000": 0.01
+    },
+    "INTELLIGENT_TIERING": {
+      "tier_ranges_gb": [[0, 51200, 0.023], [51200, 512000, 0.022], [512000, null, 0.021]],
+      "min_duration_days": 0,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.0,
+      "transition_in_per_1000": 0.01
+    },
+    "GLACIER_IR": {
+      "rate_per_gb_month": 0.004,
+      "min_duration_days": 90,
+      "min_billable_bytes": 131072,
+      "retrieval_per_gb": 0.03,
+      "transition_in_per_1000": 0.02
+    },
+    "GLACIER": {
+      "rate_per_gb_month": 0.0036,
+      "min_duration_days": 90,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.01,
+      "transition_in_per_1000": 0.03
+    },
+    "DEEP_ARCHIVE": {
+      "rate_per_gb_month": 0.00099,
+      "min_duration_days": 180,
+      "min_billable_bytes": 0,
+      "retrieval_per_gb": 0.02,
+      "transition_in_per_1000": 0.05
+    }
+  },
+  "intelligent_tiering": {
+    "monitoring_per_1000_objects_month": 0.0025,
+    "small_object_floor_bytes": 131072,
+    "tier_rates": {
+      "frequent_access": 0.023,
+      "infrequent_access": 0.0125,
+      "archive_instant_access": 0.004,
+      "archive_access": 0.0036,
+      "deep_archive_access": 0.00099
+    }
+  },
+  "archive_overhead": {
+    "standard_billed_bytes": 8192,
+    "archive_billed_bytes": 32768
+  },
+  "requests_per_1000": {
+    "standard_put": 0.005,
+    "standard_get": 0.0004
+  }
+}

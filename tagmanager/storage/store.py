@@ -58,6 +58,20 @@ def persist_rollups(session, builder, backend, skips=None):
     return run
 
 
+def stats_for_run(session, run_id):
+    """
+    Every aggregate cell persisted for one scan run.
+
+    :param session: SQLAlchemy session
+    :param run_id: StorageScanRun id
+    :returns: list of StoragePrefixStat
+    """
+    return (session.query(StoragePrefixStat)
+            .filter(StoragePrefixStat.scan_run_id == run_id)
+            .order_by(StoragePrefixStat.container, StoragePrefixStat.prefix)
+            .all())
+
+
 def latest_complete_run(session, backend=None):
     """
     Fetch the newest finished storage scan run (complete or partial).

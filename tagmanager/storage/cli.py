@@ -14,9 +14,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from tagmanager.config import get_settings
 from tagmanager.models.base import create_all, get_engine, session_factory
+from tagmanager.storage.cost import build_cost_report
+from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.rollup import RollupBuilder, band_labels
 from tagmanager.storage.s3_provider import S3StorageProvider
-from tagmanager.storage.store import persist_rollups
+from tagmanager.storage.store import (latest_complete_run, persist_rollups,
+                                      stats_for_run)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.storage_cli")
@@ -50,8 +53,9 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog="tagmanager-storage-scan",
         description="Scan mass storage, band objects by age, report rollups.")
-    parser.add_argument("--bucket", action="append", required=True,
-                        help="bucket to scan (repeatable)")
+    parser.add_argument("--bucket", action="append",
+                        help="bucket to scan (repeatable; omit with "
+                             "--cost-report to price the latest saved run)")
     parser.add_argument("--prefix", default="",
                         help="only scan keys under this prefix")
     parser.add_argument("--age-bands", default="",
@@ -60,6 +64,10 @@ def parse_args(argv):
                         help="path segments to roll prefixes up to")
     parser.add_argument("--csv-out", default="",
                         help="write the rollup summary to this CSV path")
+    parser.add_argument("--cost-report", action="store_true",
+                        help="price the rollups with the shipped snapshot")
+    parser.add_argument("--cost-csv", default="",
+                        help="write the cost report to this CSV path")
     return parser.parse_args(argv)
 
 
@@ -135,9 +143,77 @@ def print_summary(builder):
                   f"s3://{obj.container}/{obj.key}")
 
 
+def print_cost_report(report):
+    """
+    Print the cost report: top cells, band totals, grand total.
+
+    :param report: CostReport
+    """
+    print("***********************************")
+    print("*  storage cost report            *")
+    print("***********************************")
+    print(f"(estimate — list pricing, {report.region}, "
+          f"snapshot {report.as_of_date})")
+    print()
+
+    for row in report.rows[:15]:
+        loc = f"{row.container}/{row.prefix}" if row.prefix else row.container
+        print(f"  ${row.monthly_cost:>10.2f}/mo  {row.age_band:>10}  "
+              f"{row.storage_class:<14} {loc}")
+    if len(report.rows) > 15:
+        print(f"  ... {len(report.rows) - 15} more cells in --cost-csv")
+
+    print()
+    for band, cost in sorted(report.band_totals.items()):
+        print(f"  {band:>10}: ${cost:,.2f}/mo")
+    print(f"  total: ${report.total_monthly_cost:,.2f}/mo")
+
+    if report.unknown_classes:
+        print(f"  (unpriced storage classes skipped: "
+              f"{', '.join(report.unknown_classes)})")
+
+
+def write_cost_csv(path, report):
+    """
+    Write every cost row to a CSV file.
+
+    :param path: output file path
+    :param report: CostReport
+    """
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["container", "prefix", "storage_class", "age_band",
+                         "object_count", "total_bytes", "monthly_cost_usd"])
+        for row in report.rows:
+            writer.writerow([row.container, row.prefix, row.storage_class,
+                             row.age_band, row.object_count, row.total_bytes,
+                             f"{row.monthly_cost:.6f}"])
+
+
+def _run_cost_report(session, run, args):
+    """
+    Build, print, and optionally CSV the cost report for one run.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun to price
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK
+    """
+    pricing = load_pricing(provider="s3")
+    report = build_cost_report(stats_for_run(session, run.id), pricing)
+    print_cost_report(report)
+    if args.cost_csv:
+        write_cost_csv(args.cost_csv, report)
+        print(f"cost csv saved to {args.cost_csv}.")
+    return 0
+
+
 def main(argv=None, provider=None):
     """
-    Run the scan end-to-end: walk, roll up, persist, report.
+    Run the scan and/or cost report.
+
+    Scan mode needs --bucket; --cost-report alone prices the latest saved
+    run; both together scan first and price the fresh run.
 
     :param argv: CLI args (None = sys.argv)
     :param provider: StorageProvider override for tests
@@ -145,6 +221,21 @@ def main(argv=None, provider=None):
     """
     args = parse_args(argv)
     settings = get_settings()
+
+    if not args.bucket and not args.cost_report:
+        LOG.error("nothing to do — pass --bucket to scan and/or "
+                  "--cost-report to price the latest saved run")
+        return 4
+
+    if not args.bucket:
+        engine = get_engine(settings.db_url)
+        create_all(engine)
+        session = session_factory(engine)()
+        run = latest_complete_run(session, backend="s3")
+        if run is None:
+            LOG.error("no saved storage scan runs — scan first with --bucket")
+            return 4
+        return _run_cost_report(session, run, args)
 
     if args.age_bands:
         try:
@@ -178,6 +269,9 @@ def main(argv=None, provider=None):
     if args.csv_out:
         write_csv(args.csv_out, builder)
         print(f"csv saved to {args.csv_out}.")
+
+    if args.cost_report:
+        return _run_cost_report(session, run, args)
 
     return 0
 
