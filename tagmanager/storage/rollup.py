@@ -9,6 +9,8 @@ import datetime
 import heapq
 from dataclasses import dataclass
 
+from tagmanager.storage.datatypes import classify_key
+
 
 # Constants
 
@@ -89,9 +91,12 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
     Memory stays O(distinct rollup cells + sample size), never O(objects).
     """
 
+    # Builder knobs are all real construction config (thresholds, depth,
+    # sample size, clock, two opt-in dimensions) — not call complexity.
+    # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def __init__(self, age_band_days=None, prefix_depth=DEFAULT_PREFIX_DEPTH,
                  sample_size=DEFAULT_SAMPLE_SIZE, now=None,
-                 rollup_owners=False):
+                 rollup_owners=False, rollup_types=False):
         """
         :param age_band_days: ascending day thresholds (default [90, 365])
         :param prefix_depth: path segments to roll prefixes up to
@@ -99,12 +104,15 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
         :param now: timezone-aware "now" for age math (default: UTC now)
         :param rollup_owners: key cells by object owner too (cardinality
             cost — every distinct owner splits a prefix's cells)
+        :param rollup_types: key cells by coarse data type too (same
+            cardinality cost; combines multiplicatively with owners)
         """
         self.age_band_days = list(age_band_days or DEFAULT_AGE_BAND_DAYS)
         self.prefix_depth = prefix_depth
         self.sample_size = sample_size
         self.now = now or datetime.datetime.now(datetime.timezone.utc)
         self.rollup_owners = rollup_owners
+        self.rollup_types = rollup_types
 
         self.objects_seen = 0
         self.bytes_seen = 0
@@ -134,10 +142,12 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
             effective = max(effective, obj.last_accessed)
         band = classify_age(effective, self.now, self.age_band_days)
         prefix = prefix_at_depth(obj.key, self.prefix_depth)
-        # Key is ALWAYS 5 elements — owner is "" when the dimension is
-        # off, so every unpacker sees one stable shape.
+        # Key is ALWAYS 6 elements — owner/data_type are "" when their
+        # dimension is off, so every unpacker sees one stable shape.
         owner = obj.owner if self.rollup_owners else ""
-        cell_key = (obj.container, prefix, obj.storage_class, band, owner)
+        data_type = classify_key(obj.key) if self.rollup_types else ""
+        cell_key = (obj.container, prefix, obj.storage_class, band, owner,
+                    data_type)
 
         stat = self._cells.setdefault(cell_key, RollupStat())
         stat.object_count += 1
@@ -201,7 +211,7 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
         :returns: dict of band label -> RollupStat
         """
         totals = {}
-        for (_, _, _, band, _), stat in self._cells.items():
+        for (_, _, _, band, _, _), stat in self._cells.items():
             agg = totals.setdefault(band, RollupStat())
             agg.object_count += stat.object_count
             agg.total_bytes += stat.total_bytes

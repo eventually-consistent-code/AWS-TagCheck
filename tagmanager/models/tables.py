@@ -117,6 +117,7 @@ class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods
     small_object_count: Mapped[int] = mapped_column(BigInteger, default=0)
     small_object_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     owner: Mapped[str] = mapped_column(String(256), default="")
+    data_type: Mapped[str] = mapped_column(String(16), default="")
 
 
 class StorageTarget(Base):  # pylint: disable=too-few-public-methods

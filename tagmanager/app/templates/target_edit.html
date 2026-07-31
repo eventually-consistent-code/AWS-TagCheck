@@ -21,6 +21,9 @@
   <p><label><input type="checkbox" name="rollup_owners" value="1"
     {% if row.options.get("rollup_owners") %}checked{% endif %}>
     roll up by owner</label></p>
+  <p><label><input type="checkbox" name="rollup_types" value="1"
+    {% if row.options.get("rollup_types") %}checked{% endif %}>
+    roll up by data type</label></p>
   <p><label><input type="checkbox" name="enabled" value="1"
     {% if row.enabled %}checked{% endif %}> enabled</label></p>
   <p><button type="submit">save</button>

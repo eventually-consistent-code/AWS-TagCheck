@@ -73,6 +73,7 @@ class ScanOptions:  # pylint: disable=too-many-instance-attributes
     age_band_days: list = None
     prefix_depth: int = None
     rollup_owners: bool = False
+    rollup_types: bool = False
     access_log_paths: tuple = ()
     access_index: dict = None
     on_object: object = None
@@ -418,7 +419,8 @@ def run_storage_scan(session_maker, opts, provider=None, settings=None):
         provider = make_provider(opts.backend, opts.account_url)
     builder = RollupBuilder(age_band_days=age_band_days,
                             prefix_depth=prefix_depth,
-                            rollup_owners=opts.rollup_owners)
+                            rollup_owners=opts.rollup_owners,
+                            rollup_types=opts.rollup_types)
 
     session = session_maker()
     try:

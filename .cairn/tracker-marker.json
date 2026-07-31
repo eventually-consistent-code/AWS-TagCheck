@@ -255,8 +255,9 @@
       "labels": [
         "milestone-5"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T12:44:06Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T16:19:53Z"
     },
     "36": {
       "title": "Type-aware structure recommendations",

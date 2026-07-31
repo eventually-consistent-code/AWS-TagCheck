@@ -102,6 +102,11 @@ def parse_args(argv):
                         help="key rollup cells by object owner too (every "
                              "distinct owner splits a prefix's cells — "
                              "cardinality cost; azure/gcs record no owner)")
+    parser.add_argument("--rollup-types", action="store_true",
+                        help="key rollup cells by coarse data type "
+                             "(logs/media/archives/data/docs/other) from the "
+                             "key extension — cardinality cost, combines "
+                             "with --rollup-owners)")
     parser.add_argument("--access-logs", default="", metavar="GLOB",
                         help="scan mode only: local S3 server-access-log "
                              "files to fold into a last-read index "
@@ -392,6 +397,7 @@ def _scan(settings, args, provider):
         age_band_days=age_band_days,
         prefix_depth=args.prefix_depth,
         rollup_owners=args.rollup_owners,
+        rollup_types=args.rollup_types,
         access_index=access_index,
         emit_delete_dir=args.emit_delete_manifests,
         emit_batch_copy_dir=args.emit_batch_copy,

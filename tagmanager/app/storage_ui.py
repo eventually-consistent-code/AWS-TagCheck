@@ -40,7 +40,7 @@ def _redirect(url, msg=""):
 
 
 def _parse_target_form(display_name, backend, account_url, buckets, prefix,
-                       age_bands, rollup_owners):
+                       age_bands, rollup_owners, rollup_types=None):
     """
     Form fields -> StorageTarget column values.
 
@@ -57,7 +57,8 @@ def _parse_target_form(display_name, backend, account_url, buckets, prefix,
         "buckets": [b.strip() for b in buckets.splitlines() if b.strip()],
         "prefix": prefix.strip(),
         "age_band_days": bands,
-        "options": {"rollup_owners": bool(rollup_owners)},
+        "options": {"rollup_owners": bool(rollup_owners),
+                    "rollup_types": bool(rollup_types)},
     }
 
 
@@ -98,12 +99,13 @@ def storage_ui_router(templates, session_maker, scheduler=None):
     def targets_create(display_name: str = Form(""), backend: str = Form("s3"),
                        account_url: str = Form(""), buckets: str = Form(""),
                        prefix: str = Form(""), age_bands: str = Form(""),
-                       rollup_owners: str = Form(None)):
+                       rollup_owners: str = Form(None),
+                       rollup_types: str = Form(None)):
         """Create a target from the add form."""
         try:
             fields = _parse_target_form(display_name, backend, account_url,
                                         buckets, prefix, age_bands,
-                                        rollup_owners)
+                                        rollup_owners, rollup_types)
         except ValueError:
             return _redirect("/storage/targets",
                              "bad age bands — expected e.g. 90,365")
@@ -134,12 +136,13 @@ def storage_ui_router(templates, session_maker, scheduler=None):
                       buckets: str = Form(""), prefix: str = Form(""),
                       age_bands: str = Form(""),
                       rollup_owners: str = Form(None),
+                      rollup_types: str = Form(None),
                       enabled: str = Form(None)):
         """Apply the edit form."""
         try:
             fields = _parse_target_form(display_name, backend, account_url,
                                         buckets, prefix, age_bands,
-                                        rollup_owners)
+                                        rollup_owners, rollup_types)
         except ValueError:
             return _redirect(f"/storage/targets/{target_id}/edit",
                              "bad age bands — expected e.g. 90,365")

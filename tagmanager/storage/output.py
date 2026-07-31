@@ -36,12 +36,12 @@ def write_csv(path, builder):
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["container", "prefix", "storage_class", "age_band",
-                         "owner", "object_count", "total_bytes",
+                         "owner", "data_type", "object_count", "total_bytes",
                          "oldest_last_modified", "small_object_count",
                          "small_object_bytes"])
-        for (container, prefix, sclass, band,
-             owner), stat in sorted(builder.rollups().items()):
-            writer.writerow([container, prefix, sclass, band, owner,
+        for (container, prefix, sclass, band, owner,
+             data_type), stat in sorted(builder.rollups().items()):
+            writer.writerow([container, prefix, sclass, band, owner, data_type,
                              stat.object_count, stat.total_bytes,
                              stat.oldest_last_modified.isoformat()
                              if stat.oldest_last_modified else "",

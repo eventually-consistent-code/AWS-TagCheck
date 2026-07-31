@@ -43,7 +43,7 @@ def persist_rollups(session, builder, backend, skips=None):
     session.flush()
 
     for (container, prefix, storage_class, band,
-         owner), stat in builder.rollups().items():
+         owner, data_type), stat in builder.rollups().items():
         session.add(StoragePrefixStat(
             scan_run_id=run.id,
             backend=backend,
@@ -52,6 +52,7 @@ def persist_rollups(session, builder, backend, skips=None):
             storage_class=storage_class,
             age_band=band,
             owner=owner,
+            data_type=data_type,
             object_count=stat.object_count,
             total_bytes=stat.total_bytes,
             oldest_last_modified=stat.oldest_last_modified,
@@ -83,7 +84,7 @@ def schema_current(engine):
     job_columns = {col["name"] for col in
                    inspector.get_columns("storage_jobs")}
     return ({"small_object_count", "small_object_bytes",
-             "owner"}.issubset(stat_columns)
+             "owner", "data_type"}.issubset(stat_columns)
             and {"access_aware", "artifacts",
                  "structure_recs"}.issubset(run_columns)
             and "cancel_requested" in job_columns)
