@@ -1,4 +1,4 @@
-# Copilot instructions for AWS-TagManager
+# Copilot instructions for TagManager
 
 Purpose: Short guidance for GitHub Copilot sessions working on this repo — focused on build/test/lint commands, the high-level architecture, and project-specific conventions Copilot should obey.
 

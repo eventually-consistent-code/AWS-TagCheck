@@ -55,7 +55,7 @@ HTML_FILE = "index.html"
 # Optional extra guidance link (no hard-coded org URLs)
 GUIDANCE_URL_ENV = "AWS_TAGMANAGER_GUIDANCE_URL"
 
-REPORT_TITLE = "AWS Tag Manager Report"
+REPORT_TITLE = "TagManager — EC2 Tag Compliance Report"
 
 GUIDANCE_LINES = (
     "All EC2 instances must have Environment and Product tags whose values "
@@ -384,7 +384,7 @@ def main():
     Guards → load canonical → single-pass multi-region EC2 tag scan →
     optional CSV gold-list merge → HTML report → optional S3 upload → exit codes.
     """
-    parser = argparse.ArgumentParser(description="AWS Tag Manager with optional CSV gold-list merge")
+    parser = argparse.ArgumentParser(description="TagManager classic EC2 scanner with optional CSV gold-list merge")
     parser.add_argument("--csv", help="Path or s3:// URI to CSV with tag values (resource_id, tag_key, tag_value)")
     parser.add_argument("--write-gold", action="store_true", help="Write merged gold-list.json (and conflicts.json)")
     parser.add_argument("--gold-output", default="gold-list.json", help="Path to write gold-list JSON")

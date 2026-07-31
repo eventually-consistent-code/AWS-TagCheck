@@ -344,8 +344,8 @@
         "web-app"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T14:58:59Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T15:03:43Z"
     },
     "45": {
       "title": "Container packaging — one-command web app, CLI preserved",
@@ -373,8 +373,9 @@
         "milestone-5",
         "web-app"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T14:46:12Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T15:03:53Z"
     }
   },
   "phases": {

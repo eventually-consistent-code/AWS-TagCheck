@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aws-tag-manager"
+name = "tagmanager"
 version = "0.1.0"
-description = "Compare AWS EC2 instance tags against a canonical Environment/Product list, merge a desired-tags CSV into a gold list, and publish reports to S3"
+description = "TagManager — multi-cloud tag compliance and storage lifecycle optimizer: scan AWS/Azure/GCS/filesystem storage, price stale data, generate lifecycle artifacts, and report from CLI or web app"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
@@ -41,6 +41,7 @@ dev = [
 [project.scripts]
 aws-tag-manager = "aws_tag_manager:main"
 tagmanager-serve = "tagmanager.serve:main"
+tagmanager-storage-scan = "tagmanager.storage.cli:main"
 
 [tool.setuptools]
 packages = ["tagmanager", "tagmanager.app", "tagmanager.models", "tagmanager.providers", "tagmanager.rules", "tagmanager.storage"]

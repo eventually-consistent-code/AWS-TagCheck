@@ -35,7 +35,7 @@ def test_render_clean_run_no_tables():
         datetime.date(2026, 7, 29),
         summary={"regions_scanned": 3, "instances_seen": 10},
     )
-    assert "AWS Tag Manager Report" in html_body
+    assert "TagManager — EC2 Tag Compliance Report" in html_body
     assert "2026-07-29" in html_body
     assert "All tags clean" in html_body
     assert "<table" not in html_body
@@ -85,4 +85,4 @@ def test_write_html_report(tmp_path):
     write_html_report(str(path), body)
     assert path.is_file()
     text = path.read_text(encoding="utf-8")
-    assert "AWS Tag Manager Report" in text
+    assert "TagManager — EC2 Tag Compliance Report" in text
