@@ -6,9 +6,11 @@ Author(s): John Reed
 
 from fastapi import APIRouter, Request
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError
 
 from tagmanager.app.queries import violations_query
-from tagmanager.models.tables import Resource, ScanRun, Violation
+from tagmanager.models.tables import (Resource, ScanRun, StoragePrefixStat,
+                                      StorageScanRun, Violation)
 
 
 def ui_router(templates, session_maker):
@@ -72,6 +74,48 @@ def ui_router(templates, session_maker):
             query = violations_query(session, cloud, latest_only=not all)
             return templates.TemplateResponse(request, "violations.html",
                                               {"rows": query.all(), "cloud": cloud})
+        finally:
+            session.close()
+
+    @router.get("/storage")
+    def storage(request: Request):
+        """Latest storage scan: bands, top cost prefixes, recommendations."""
+        session = session_maker()
+        try:
+            run = (session.query(StorageScanRun)
+                   .filter(StorageScanRun.status.in_(["complete", "partial"]))
+                   .order_by(StorageScanRun.id.desc()).first())
+            band_rows = []
+            top_cells = []
+            if run:
+                stats = (session.query(StoragePrefixStat)
+                         .filter(StoragePrefixStat.scan_run_id == run.id)
+                         .all())
+                bands = {}
+                for stat in stats:
+                    entry = bands.setdefault(stat.age_band, [0, 0])
+                    entry[0] += stat.object_count
+                    entry[1] += stat.total_bytes
+                band_rows = sorted(bands.items())
+                merged = {}
+                for stat in stats:
+                    key = (stat.container, stat.prefix, stat.storage_class,
+                           stat.age_band)
+                    row = merged.setdefault(key, [0, 0])
+                    row[0] += stat.object_count
+                    row[1] += stat.total_bytes
+                top_cells = sorted(
+                    ((key, counts) for key, counts in merged.items()),
+                    key=lambda item: -item[1][1])[:10]
+            return templates.TemplateResponse(request, "storage.html", {
+                "run": run, "band_rows": band_rows, "top_cells": top_cells,
+                "recs": list(run.structure_recs or []) if run else [],
+                "stale_schema": False})
+        except OperationalError:
+            # Old dev DB missing new storage columns — say so, don't 500.
+            return templates.TemplateResponse(request, "storage.html", {
+                "run": None, "band_rows": [], "top_cells": [], "recs": [],
+                "stale_schema": True})
         finally:
             session.close()
 

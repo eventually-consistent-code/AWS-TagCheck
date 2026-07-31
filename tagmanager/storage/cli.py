@@ -19,6 +19,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from tagmanager.config import get_settings
 from tagmanager.models.base import create_all, get_engine, session_factory
 from tagmanager.storage.cost import build_cost_report
+from tagmanager.storage.html_report import render_storage_report
 from tagmanager.storage.lifecycle_gen import (APPLY_HEADER,
                                               build_lifecycle_configs)
 from tagmanager.storage.manifests import (DELETE_APPLY_NOTES,
@@ -108,6 +109,9 @@ def parse_args(argv):
     parser.add_argument("--emit-batch-copy", default="", metavar="DIR",
                         help="scan mode only: stream stale objects into "
                              "S3 Batch Operations copy manifests (CSV)")
+    parser.add_argument("--html-report", default="", metavar="PATH",
+                        help="write the storage insights HTML report "
+                             "(age, cost, savings, structure, artifacts)")
     parser.add_argument("--recommend-structure", action="store_true",
                         help="derive layout recommendations from the run "
                              "and persist them for move plans/reports")
@@ -614,6 +618,8 @@ def _post_scan_outputs(session, run, args):
         steps.append(_emit_tiering)
     if args.recommend_structure:
         steps.append(_run_structure)
+    if args.html_report:
+        steps.append(_write_html_report)
     for step in steps:
         rc = step(session, run, args)
         if rc:
@@ -691,10 +697,12 @@ def main(argv=None, provider=None):
 
     if not args.bucket and not (args.cost_report or args.project_savings
                                 or args.emit_lifecycle or args.emit_tiering
-                                or args.recommend_structure):
+                                or args.recommend_structure
+                                or args.html_report):
         LOG.error("nothing to do — pass --bucket to scan, or --cost-report / "
                   "--project-savings / --emit-lifecycle / --emit-tiering / "
-                  "--recommend-structure to work from the latest saved run")
+                  "--recommend-structure / --html-report to work from the "
+                  "latest saved run")
         return 4
 
     if (args.emit_delete_manifests or args.emit_batch_copy
@@ -706,6 +714,33 @@ def main(argv=None, provider=None):
     if not args.bucket:
         return _analyze_latest(settings, args)
     return _scan(settings, args, provider)
+
+
+def _write_html_report(session, run, args):
+    """
+    Compose and write the storage insights HTML report for one run.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun to report on
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK
+    """
+    stats = stats_for_run(session, run.id)
+    cost_report = None
+    projections = None
+    try:
+        pricing = load_pricing(provider=run.backend)
+        cost_report = build_cost_report(stats, pricing)
+        projections = project_options(stats, pricing, run.age_band_days)
+    except FileNotFoundError:
+        pass  # fs backend — report renders with costs honestly omitted
+
+    page = render_storage_report(run, stats, cost_report=cost_report,
+                                 projections=projections)
+    with open(args.html_report, "w", encoding="utf-8") as handle:
+        handle.write(page)
+    print(f"storage report saved to {args.html_report}.")
+    return 0
 
 
 def _load_access_index_arg(args):

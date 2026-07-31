@@ -46,17 +46,20 @@ export AWS_TAGMANAGER_EXPECTED_ACCOUNT=123456789012
 ./aws_tag_manager.py
 ```
 
-Storage age & cost scan:
+Storage age & cost scan (S3, Azure Blob, GCS, or local/SMB via `--backend`):
 
 ```bash
 python -m tagmanager.storage.cli --bucket my-data-lake --age-bands 90,365
-python -m tagmanager.storage.cli --cost-report --project-savings
+python -m tagmanager.storage.cli --cost-report --project-savings --recommend-structure
+python -m tagmanager.storage.cli --emit-lifecycle out/ --html-report storage.html
 ```
 
-First command scans and prints the age-band summary; second prices the
-saved run and projects savings per management option — no rescan needed.
-All figures are list-price estimates (us-east-1 snapshot, refresh with
-`python -m tagmanager.storage.pricing_refresh`).
+Scan once, then everything else works off the saved run — cost report,
+per-option savings, structure recommendations, generated artifacts
+(lifecycle configs, tiering configs, delete/batch-copy/move manifests via
+the `--emit-*` flags), and the one-page HTML report. The web UI gets a
+`/storage` page too. All figures are list-price estimates (refresh
+snapshots with `python -m tagmanager.storage.pricing_refresh`).
 
 ## Documentation
 
