@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from tagmanager.app.auth import install_auth
 from tagmanager.app.queries import violations_query
+from tagmanager.app.storage_ui import storage_ui_router
 from tagmanager.app.ui import ui_router
 from tagmanager.models.tables import Resource, ScanRun, Violation
 
@@ -21,12 +22,14 @@ LOG = logging.getLogger("root.app")
 LOG.setLevel(logging.INFO)
 
 
-def create_app(settings, session_maker):
+def create_app(settings, session_maker, scheduler=None):
     """
     Build the FastAPI app.
 
     :param settings: Settings
     :param session_maker: sessionmaker bound to the catalog DB
+    :param scheduler: APScheduler instance for storage scan triggers
+        (None disables web-triggered scans)
     :returns: FastAPI app
     """
     app = FastAPI(title="TagManager")
@@ -93,6 +96,9 @@ def create_app(settings, session_maker):
     app.mount("/static", StaticFiles(
         directory=str(pathlib.Path(__file__).parent / "static")), name="static")
     app.include_router(ui_router(templates, session_maker))
+    app.include_router(storage_ui_router(templates, session_maker,
+                                         scheduler))
+    app.state.scheduler = scheduler
 
     app.state.settings = settings
     install_auth(app, settings)

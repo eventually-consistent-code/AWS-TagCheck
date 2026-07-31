@@ -332,8 +332,9 @@
         "milestone-5",
         "web-app"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T13:24:58Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T14:53:53Z"
     },
     "44": {
       "title": "Storage insights UI + artifact downloads",

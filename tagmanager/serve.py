@@ -81,7 +81,7 @@ def main():
                                 _scopes_loader(maker))
     scheduler.start()
 
-    app = create_app(settings, maker)
+    app = create_app(settings, maker, scheduler=scheduler)
     LOG.info("tagmanager up... http://0.0.0.0:8080")
     uvicorn.run(app, host="0.0.0.0", port=8080)
 

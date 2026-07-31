@@ -1,0 +1,1 @@
+{% if job %}{{ job.state }} — {{ job.objects_seen }} objects{% if job.cancel_requested and job.state == "running" %} (cancelling at next batch boundary){% endif %}{% else %}job gone{% endif %}

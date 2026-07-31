@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Edit target {{ row.id }}</h2>
+{% if msg %}<p><b>{{ msg }}</b></p>{% endif %}
+
+<form method="post" action="/storage/targets/{{ row.id }}">
+  <p><label>name <input name="display_name" value="{{ row.display_name }}"></label></p>
+  <p><label>backend
+    <select name="backend">
+      {% for opt in ["s3", "azure", "gcs", "fs"] %}
+      <option value="{{ opt }}" {% if row.backend == opt %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select></label></p>
+  <p><label>account url (azure)
+    <input name="account_url" size="50" value="{{ row.account_url }}"></label></p>
+  <p><label>buckets / roots (one per line)<br>
+    <textarea name="buckets" rows="3" cols="50">{{ row.buckets | join("\n") }}</textarea></label></p>
+  <p><label>prefix <input name="prefix" value="{{ row.prefix }}"></label></p>
+  <p><label>age bands (days)
+    <input name="age_bands" value="{{ row.age_band_days | join(',') }}"></label></p>
+  <p><label><input type="checkbox" name="rollup_owners" value="1"
+    {% if row.options.get("rollup_owners") %}checked{% endif %}>
+    roll up by owner</label></p>
+  <p><label><input type="checkbox" name="enabled" value="1"
+    {% if row.enabled %}checked{% endif %}> enabled</label></p>
+  <p><button type="submit">save</button>
+     <a href="/storage/targets">back</a></p>
+</form>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Storage targets</h2>
+{% if msg %}<p><b>{{ msg }}</b></p>{% endif %}
+
+<table>
+  <tr><th>id</th><th>name</th><th>backend</th><th>buckets/roots</th>
+      <th>age bands</th><th>enabled</th><th></th><th></th></tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.id }}</td>
+    <td>{{ row.display_name or "—" }}</td>
+    <td>{{ row.backend }}</td>
+    <td>{{ row.buckets | join(", ") }}</td>
+    <td>{{ row.age_band_days | join(",") if row.age_band_days else "default" }}</td>
+    <td>{{ "yes" if row.enabled else "no" }}</td>
+    <td><a href="/storage/targets/{{ row.id }}/edit">edit</a></td>
+    <td>
+      <form method="post" action="/storage/targets/{{ row.id }}/scan">
+        <button type="submit" {% if not row.enabled %}disabled{% endif %}>scan now</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h3>Add target</h3>
+<form method="post" action="/storage/targets">
+  <p><label>name <input name="display_name"></label></p>
+  <p><label>backend
+    <select name="backend">
+      <option value="s3">s3</option>
+      <option value="azure">azure</option>
+      <option value="gcs">gcs</option>
+      <option value="fs">fs (local/SMB root paths)</option>
+    </select></label></p>
+  <p><label>account url (azure) <input name="account_url" size="50"></label></p>
+  <p><label>buckets / roots (one per line)<br>
+    <textarea name="buckets" rows="3" cols="50"></textarea></label></p>
+  <p><label>prefix <input name="prefix"></label></p>
+  <p><label>age bands (days, e.g. 90,365) <input name="age_bands"></label></p>
+  <p><label><input type="checkbox" name="rollup_owners" value="1">
+    roll up by owner (cardinality cost)</label></p>
+  <p><button type="submit">add target</button></p>
+</form>
+{% endblock %}

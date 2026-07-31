@@ -1,4 +1,5 @@
 boto3>=1.34
+python-multipart>=0.0.9
 
 # Optional storage backends (lazy-imported; install only what you scan):
 # azure-storage-blob>=12.19   # --backend azure
