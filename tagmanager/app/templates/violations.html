@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<form method="get">
+  <input name="cloud" placeholder="cloud" value="{{ cloud }}">
+  <button>Filter</button>
+</form>
 <table>
   <tr><th>Cloud</th><th>Resource</th><th>Rule</th><th>Value</th><th>Issue</th></tr>
   {% for v, res in rows %}

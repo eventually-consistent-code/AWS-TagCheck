@@ -28,8 +28,12 @@ def ui_router(templates, session_maker):
             run = session.query(ScanRun).order_by(ScanRun.id.desc()).first()
             by_cloud = (session.query(Resource.cloud, func.count(Resource.id))  # pylint: disable=not-callable
                         .group_by(Resource.cloud).all())
-            violating = (session.query(func.count(func.distinct(  # pylint: disable=not-callable
-                Violation.resource_pk))).scalar() or 0)
+            # Count distinct resources with violations in the latest run only
+            violating = 0
+            if run:
+                violating = (session.query(func.count(func.distinct(  # pylint: disable=not-callable
+                    Violation.resource_pk)))
+                    .filter(Violation.scan_run_id == run.id).scalar() or 0)
             compliance = 100
             if run and run.resources_seen:
                 compliance = round(100 * (1 - violating / run.resources_seen))
@@ -39,7 +43,8 @@ def ui_router(templates, session_maker):
             session.close()
 
     @router.get("/resources")
-    def resources(request: Request, cloud: str = "", rtype: str = ""):
+    def resources(request: Request, cloud: str = "", rtype: str = "",
+                  tag_key: str = ""):
         """Filterable resource table."""
         session = session_maker()
         try:
@@ -48,20 +53,26 @@ def ui_router(templates, session_maker):
                 query = query.filter(Resource.cloud == cloud)
             if rtype:
                 query = query.filter(Resource.rtype == rtype)
+            rows = query.all()
+            # Filter by tag_key if provided (mirror /api/resources logic)
+            if tag_key:
+                rows = [r for r in rows if tag_key in r.tags]
             return templates.TemplateResponse(request, "resources.html", {
-                "rows": query.all(), "cloud": cloud, "rtype": rtype})
+                "rows": rows, "cloud": cloud, "rtype": rtype, "tag_key": tag_key})
         finally:
             session.close()
 
     @router.get("/violations")
-    def violations(request: Request):
+    def violations(request: Request, cloud: str = ""):
         """All findings joined to their resources."""
         session = session_maker()
         try:
-            rows = (session.query(Violation, Resource)
-                    .join(Resource, Violation.resource_pk == Resource.id).all())
+            query = (session.query(Violation, Resource)
+                     .join(Resource, Violation.resource_pk == Resource.id))
+            if cloud:
+                query = query.filter(Resource.cloud == cloud)
             return templates.TemplateResponse(request, "violations.html",
-                                              {"rows": rows})
+                                              {"rows": query.all(), "cloud": cloud})
         finally:
             session.close()
 
