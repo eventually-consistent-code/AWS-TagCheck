@@ -17,7 +17,7 @@ from aws import (
     upload_file_to_s3,
     parse_csv_tags_text,
 )
-from aws_tag_check import (
+from aws_tag_manager import (
     build_report_key,
     load_canonical,
     load_csv_tags,
@@ -138,7 +138,7 @@ def test_load_csv_tags_missing_file_exits():
 def test_load_csv_tags_from_s3():
     args = mock.Mock(csv="s3://bkt/in/tags.csv")
     with mock.patch(
-        "aws_tag_check.read_s3_text",
+        "aws_tag_manager.read_s3_text",
         return_value="resource_id,tag_key,tag_value\ni-abc,Environment,Prod\n",
     ):
         tags = load_csv_tags(mock.Mock(), args)
@@ -157,7 +157,7 @@ def test_scan_region_returns_tag_map():
         },
     ]
     with mock.patch(
-        "aws_tag_check.iter_instances",
+        "aws_tag_manager.iter_instances",
         return_value=iter(instances),
     ):
         viol, skip, seen, tag_map = scan_region(

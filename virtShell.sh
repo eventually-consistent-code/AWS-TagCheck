@@ -6,7 +6,7 @@
 ########################
 
 ##################################################################
-# Bootstrap a Python 3 venv and install aws-tag-check deps.      #
+# Bootstrap a Python 3 venv and install aws-tag-manager deps.      #
 ##################################################################
 
 set -euo pipefail
@@ -46,4 +46,4 @@ pip install --upgrade pip
 pip install -e .
 pip install -r requirements.txt
 
-echo "venv ready — source .venv/bin/activate then run aws-tag-check or ./aws_tag_check.py"
+echo "venv ready — source .venv/bin/activate then run aws-tag-manager or ./aws_tag_manager.py"

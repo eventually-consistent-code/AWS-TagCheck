@@ -41,7 +41,7 @@ from aws import (
 
 # Log generator
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-LOG = logging.getLogger("root.aws_tag_check")
+LOG = logging.getLogger("root.aws_tag_manager")
 LOG.setLevel(logging.INFO)
 
 # Regions historically inaccessible with the service account
@@ -52,9 +52,9 @@ CON_FILE = "canonical.json"
 HTML_FILE = "index.html"
 
 # Optional extra guidance link (no hard-coded org URLs)
-GUIDANCE_URL_ENV = "AWS_TAGCHECK_GUIDANCE_URL"
+GUIDANCE_URL_ENV = "AWS_TAGMANAGER_GUIDANCE_URL"
 
-REPORT_TITLE = "AWS Tag Check Report"
+REPORT_TITLE = "AWS Tag Manager Report"
 
 GUIDANCE_LINES = (
     "All EC2 instances must have Environment and Product tags whose values "
@@ -383,7 +383,7 @@ def main():
     Guards → load canonical → single-pass multi-region EC2 tag scan →
     optional CSV gold-list merge → HTML report → optional S3 upload → exit codes.
     """
-    parser = argparse.ArgumentParser(description="AWS Tag Check with optional CSV gold-list merge")
+    parser = argparse.ArgumentParser(description="AWS Tag Manager with optional CSV gold-list merge")
     parser.add_argument("--csv", help="Path or s3:// URI to CSV with tag values (resource_id, tag_key, tag_value)")
     parser.add_argument("--write-gold", action="store_true", help="Write merged gold-list.json (and conflicts.json)")
     parser.add_argument("--gold-output", default="gold-list.json", help="Path to write gold-list JSON")

@@ -9,7 +9,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 import aws
-from aws_tag_check import load_canonical, scan_region
+from aws_tag_manager import load_canonical, scan_region
 
 
 def test_load_canonical_ok():
@@ -35,7 +35,7 @@ def test_load_canonical_bad_shape(tmp_path):
 def test_scan_region_skip_on_client_error():
     canonical = load_canonical("canonical.json")
     with mock.patch(
-        "aws_tag_check.iter_instances",
+        "aws_tag_manager.iter_instances",
         side_effect=ClientError(
             {"Error": {"Code": "UnauthorizedOperation", "Message": "nope"}},
             "DescribeInstances",
@@ -65,7 +65,7 @@ def test_scan_region_findings():
         },
     ]
     with mock.patch(
-        "aws_tag_check.iter_instances",
+        "aws_tag_manager.iter_instances",
         return_value=iter(instances),
     ):
         viol, skip, seen, _tag_map = scan_region(mock.Mock(), "us-west-2", canonical)

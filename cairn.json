@@ -2,7 +2,7 @@
   "$schema": "cairn 2.0 project config. tracker = your single source of truth for work items. Tokens come from env vars, never this file. Optional `user` block: {\"handle\": \"<your tracker username>\", \"mode\": \"vibe\"|\"engineer\"} — handle enables ownership tracking, mode picks the collaboration posture (vibe = cairn drives, engineer = you pair; default vibe). _alternatives below are example `tracker` blocks for the other supported backends — copy the one you want over the active `tracker` block above and delete `_alternatives`.",
   "tracker": {
     "type": "github",
-    "config": { "repo": "eventually-consistent-code/AWS-TagCheck" }
+    "config": { "repo": "eventually-consistent-code/AWS-TagManager" }
   },
   "_docs": {
     "$comment": "Optional documentation connector — publishes README + docs/ as a page tree. Copy to `docs` to enable. Credentials come from env vars named here, never this file.",

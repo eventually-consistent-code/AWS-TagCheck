@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aws-tag-check"
+name = "aws-tag-manager"
 version = "0.1.0"
 description = "Compare AWS EC2 instance tags against a canonical Environment/Product list"
 readme = "README.txt"
@@ -24,10 +24,10 @@ dev = [
 ]
 
 [project.scripts]
-aws-tag-check = "aws_tag_check:main"
+aws-tag-manager = "aws_tag_manager:main"
 
 [tool.setuptools]
-py-modules = ["aws_tag_check", "aws"]
+py-modules = ["aws_tag_manager", "aws"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

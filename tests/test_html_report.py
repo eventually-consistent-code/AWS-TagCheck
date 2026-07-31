@@ -5,7 +5,7 @@ Author(s): John Reed
 
 import datetime
 
-from aws_tag_check import render_html_report, write_html_report
+from aws_tag_manager import render_html_report, write_html_report
 
 
 def _sample_violations():
@@ -35,7 +35,7 @@ def test_render_clean_run_no_tables():
         datetime.date(2026, 7, 29),
         summary={"regions_scanned": 3, "instances_seen": 10},
     )
-    assert "AWS Tag Check Report" in html_body
+    assert "AWS Tag Manager Report" in html_body
     assert "2026-07-29" in html_body
     assert "All tags clean" in html_body
     assert "<table" not in html_body
@@ -85,4 +85,4 @@ def test_write_html_report(tmp_path):
     write_html_report(str(path), body)
     assert path.is_file()
     text = path.read_text(encoding="utf-8")
-    assert "AWS Tag Check Report" in text
+    assert "AWS Tag Manager Report" in text
