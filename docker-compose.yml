@@ -17,9 +17,32 @@ services:
     ports: ["8080:8080"]
     environment:
       TAGMANAGER_DB_URL: postgresql+psycopg://tagmanager:tagmanager@db/tagmanager
+      TAGMANAGER_ARTIFACT_DIR: /data/artifacts
+      # Cloud credentials pass through from the host — nothing is baked
+      # into the image. Uncomment the backends you scan:
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN}
+      # AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      # AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      # AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      # AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+      # GCS: mount a service-account JSON (see volumes) and point at it:
+      # GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp.json
+    volumes:
+      - artifacts:/data
+      # GCS service-account key (read-only) — uncomment with the env var above:
+      # - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/gcp.json:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/api/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  artifacts:

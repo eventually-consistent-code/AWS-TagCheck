@@ -102,6 +102,40 @@ docker compose exec db psql -U tagmanager -d tagmanager -c \
 
 A resource missing the key yields issue `missing`; present with a value outside `allowed_values` yields `invalid`. Rule changes apply on the next scan run.
 
+## Storage Optimizer
+
+The storage side scans mass storage (S3, Azure Blob, GCS, local/SMB) for old and costly data, then generates lifecycle artifacts and layout recommendations. The image bundles every backend — no extra install.
+
+### Targets and scans (web)
+
+Unlike tag scopes, storage targets have a UI. Go to **Storage → Targets**, add a target (backend, bucket/container names — or root paths for `fs` — one per line, age bands, owner-rollup toggle), and hit **scan now**. **Storage → Jobs** shows progress live (2s polling) and lets you cancel — cancellation lands at the next batch boundary, not instantly. **Storage → Insights** renders cost / savings / recommendations off the latest run per backend; the run page generates and zips artifacts (lifecycle configs, tiering configs, structure proposal, HTML report). Key-level manifests (delete / batch-copy / move plans) remain CLI-only — see the [Technical Reference](technical-reference.md).
+
+### Credentials
+
+Storage backends read the same environment credentials as the tag scanner (AWS chain, `DefaultAzureCredential`, GCP application-default) — see [Cloud Credentials](#cloud-credentials). The storage read paths need list access: `s3:ListBucket` (+ `s3:GetObject` only if you fold in access logs), Azure `Storage Blob Data Reader`, GCS `storage.objects.list`. Azure last-access enrichment additionally needs last-access-time tracking enabled on the account.
+
+### Artifacts volume
+
+Generated artifacts land under `TAGMANAGER_ARTIFACT_DIR` (default `/data/artifacts` in the image), persisted on the compose `artifacts` volume so they survive restarts. Retrieve them via the browser download or straight off the volume:
+
+```bash
+docker compose cp app:/data/artifacts ./artifacts-backup
+```
+
+`docker compose down` keeps the volume; add `-v` only to wipe it.
+
+### CLI in the image
+
+Everything the web app does (bar key-level manifests) is also a CLI, shipped in the same image — no server needed:
+
+```bash
+docker compose exec app tagmanager-storage-scan --backend s3 --bucket my-lake --age-bands 90,365
+docker compose exec app tagmanager-storage-scan --cost-report --project-savings --recommend-structure
+docker compose exec app tagmanager-storage-scan --emit-lifecycle /data/artifacts/manual/
+```
+
+On a bare install the identical console scripts are on `PATH` after `pip install .` — `tagmanager-serve`, `tagmanager-storage-scan`, and the classic `aws-tag-manager` EC2 scanner. Web app and CLI are the same service layer; neither is a second-class citizen.
+
 ## Scan Lifecycle & Manual Runs
 
 Each run writes a `scan_runs` row: `running` → `complete` (all scopes swept) or `partial` (at least one scope skipped, or the run was reaped after a crash). A failing scope never fails the run — it lands in the run's `skips` list with the error string, and every other scope still gets scanned. The overlap guard skips a tick entirely if a run is still `running`.

@@ -30,13 +30,28 @@ It started life as an AWS EC2 tag checker (that CLI still works — see the [Tec
 
 ## Quick start
 
-Platform (web UI + scheduled scans, Postgres via compose):
+The whole thing — multi-cloud tag compliance **and** storage lifecycle
+optimization, web UI plus scheduled scans, all backends — in one command:
 
 ```bash
 docker compose up
 ```
 
-Then open http://localhost:8080 — dashboard is up, database is seeded from `canonical.json`, and the scanner runs hourly. Add the accounts/subscriptions/projects you want scanned as Scope rows (the [Runbook](docs/runbook.md) walks through it).
+Then open http://localhost:8080. The dashboard is up, the database is
+seeded from `canonical.json`, the tag scanner runs hourly, and the
+**Storage** pages let you configure scan targets, launch and watch scans,
+read cost/savings/recommendations, and download generated artifacts as a
+zip. The image bundles every storage backend (S3, Azure Blob, GCS,
+local/SMB); pass cloud credentials through the environment (see the
+commented block in `docker-compose.yml` and the [Runbook](docs/runbook.md)).
+Generated artifacts persist on the `artifacts` volume.
+
+The CLI ships in the same image — same tool, no web server needed:
+
+```bash
+docker compose exec app tagmanager-storage-scan --bucket my-lake --age-bands 90,365
+docker compose exec app tagmanager-storage-scan --cost-report --project-savings
+```
 
 Classic AWS CLI:
 
