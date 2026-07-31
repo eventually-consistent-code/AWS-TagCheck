@@ -38,8 +38,88 @@ def test_list_resources_normalizes_arn_and_tags():
     assert res.tags["Environment"] == "Prod"
     assert res.region == "us-east-1"
 
+    # Verify exact AWS API call arguments
+    session.client.assert_called_once_with("resourcegroupstaggingapi")
+    client.get_paginator.assert_called_once_with("get_resources")
+
 
 def test_capabilities_direct_write():
     """Test that AWS provider reports direct write capability."""
     provider = AwsProvider(session_builder=lambda scope, region: mock.Mock())
     assert provider.capabilities().supports_direct_write is True
+
+
+@mock.patch("tagmanager.providers.aws_provider.boto3")
+def test_default_session_builder_with_assume_role(mock_boto3):
+    """Test session builder assumes role when role_arn is configured."""
+    # Mock STS and Session
+    sts_client = mock.Mock()
+    mock_boto3.client.return_value = sts_client
+    session_obj = mock.Mock()
+    mock_boto3.Session.return_value = session_obj
+
+    # Configure STS assume_role response
+    sts_client.assume_role.return_value = {
+        "Credentials": {
+            "AccessKeyId": "AKIA123456789",
+            "SecretAccessKey": "secret-key",
+            "SessionToken": "token-xyz"
+        }
+    }
+
+    # Import here to use the mocked boto3
+    # pylint: disable=import-outside-toplevel
+    from tagmanager.providers.aws_provider import _default_session_builder
+
+    scope = ScopeConfig(
+        cloud="aws",
+        scope_id="111122223333",
+        credentials={"role_arn": "arn:aws:iam::111122223333:role/TagManagerRole"},
+        regions=["us-east-1"]
+    )
+
+    result = _default_session_builder(scope, "us-east-1")
+
+    # Verify STS.assume_role was called with correct params
+    sts_client.assume_role.assert_called_once_with(
+        RoleArn="arn:aws:iam::111122223333:role/TagManagerRole",
+        RoleSessionName="tagmanager"
+    )
+
+    # Verify boto3.Session was called with temp credentials
+    mock_boto3.Session.assert_called_once_with(
+        aws_access_key_id="AKIA123456789",
+        aws_secret_access_key="secret-key",
+        aws_session_token="token-xyz",
+        region_name="us-east-1"
+    )
+
+    assert result == session_obj
+
+
+@mock.patch("tagmanager.providers.aws_provider.boto3")
+def test_default_session_builder_with_default_chain(mock_boto3):
+    """Test session builder uses default credential chain when no role_arn."""
+    session_obj = mock.Mock()
+    mock_boto3.Session.return_value = session_obj
+
+    # Import here to use the mocked boto3
+    # pylint: disable=import-outside-toplevel
+    from tagmanager.providers.aws_provider import _default_session_builder
+
+    scope = ScopeConfig(
+        cloud="aws",
+        scope_id="111122223333",
+        credentials={},
+        regions=["us-west-2"]
+    )
+
+    result = _default_session_builder(scope, "us-west-2")
+
+    # Verify no STS call was made
+    mock_boto3.client.assert_not_called()
+
+    # Verify boto3.Session was called with only region_name
+    mock_boto3.Session.assert_called_once_with(region_name="us-west-2")
+
+    assert result == session_obj
