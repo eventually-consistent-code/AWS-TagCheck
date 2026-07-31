@@ -71,6 +71,25 @@ was clean, the run exits 4 so CI notices the missing report.
   pytest
   ./static_analysis.sh
 
+## Platform (web UI)
+
+  docker compose up
+
+The web UI runs at http://localhost:8080 and provides a read-only dashboard to
+browse tags across cloud providers. Database defaults to SQLite; to use
+PostgreSQL, pass TAGMANAGER_DB_URL as an environment variable.
+
+Configuration:
+  TAGMANAGER_DB_URL              database connection URL (default: SQLite
+                                 in-memory); use postgresql+psycopg://
+                                 for PostgreSQL
+  TAGMANAGER_AUTH_MODE           "none" (default) or "oidc"
+  TAGMANAGER_OIDC_DISCOVERY_URL  OpenID Connect discovery URL (required if
+                                 AUTH_MODE=oidc)
+  TAGMANAGER_OIDC_CLIENT_ID      OIDC client ID (required if AUTH_MODE=oidc)
+  TAGMANAGER_OIDC_CLIENT_SECRET  OIDC client secret (required if AUTH_MODE=oidc)
+  TAGMANAGER_SCAN_INTERVAL_MINUTES  how often to scan clouds (default: 60)
+
 ## TODO
 
   # - decide what an empty tag_value in the CSV means (today it overwrites

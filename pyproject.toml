@@ -26,6 +26,7 @@ dependencies = [
   "pydantic-settings>=2.2",
   "httpx>=0.27",
   "itsdangerous>=2.1",
+  "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -41,8 +42,11 @@ aws-tag-manager = "aws_tag_manager:main"
 tagmanager-serve = "tagmanager.serve:main"
 
 [tool.setuptools]
-packages = ["tagmanager"]
+packages = ["tagmanager", "tagmanager.app", "tagmanager.models", "tagmanager.providers", "tagmanager.rules"]
 py-modules = ["aws_tag_manager", "aws"]
+
+[tool.setuptools.package-data]
+tagmanager = ["app/templates/*.html", "app/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
