@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aws-tag-manager"
 version = "0.1.0"
-description = "Compare AWS EC2 instance tags against a canonical Environment/Product list"
+description = "Compare AWS EC2 instance tags against a canonical Environment/Product list, merge a desired-tags CSV into a gold list, and publish reports to S3"
 readme = "README.txt"
 requires-python = ">=3.10"
 authors = [

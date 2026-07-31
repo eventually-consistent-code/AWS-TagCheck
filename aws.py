@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 """
-Purpose: AWS session helpers for tag check — boto3 session, STS identity,
-EC2 clients/regions, instance enumeration, and tag compliance checks.
+Purpose: AWS helpers for TagManager — boto3 session, STS identity, EC2
+clients/regions, instance enumeration, tag compliance checks, CSV tag
+parsing, gold-list merging, and S3 read/upload helpers.
 Author(s): John Reed, Nick Bitzer
 """
 
