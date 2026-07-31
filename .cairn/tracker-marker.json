@@ -92,6 +92,114 @@
       ],
       "state": "closed",
       "updatedAt": "2026-07-31T09:09:44Z"
+    },
+    "19": {
+      "title": "Backend-agnostic storage inventory model + scanner interface",
+      "bodyHash": "4f202c21231c364e",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:23Z"
+    },
+    "20": {
+      "title": "S3 inventory scanner with user-configurable age thresholds",
+      "bodyHash": "2ab320e391fe457a",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:26Z"
+    },
+    "21": {
+      "title": "Storage pricing maps + stale-data cost report",
+      "bodyHash": "625e701166a33e75",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:28Z"
+    },
+    "22": {
+      "title": "Savings projections per management option",
+      "bodyHash": "a1188f529082a161",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:30Z"
+    },
+    "23": {
+      "title": "Deletion candidate manifests (analyze + generate, human applies)",
+      "bodyHash": "34546a86bf2538b6",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:31Z"
+    },
+    "24": {
+      "title": "Age-out rule generator — S3 lifecycle policy JSON",
+      "bodyHash": "c49239631a68d72e",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:33Z"
+    },
+    "25": {
+      "title": "Intelligent-tiering configs + archive/batch move plans",
+      "bodyHash": "608d92f5bc942b3d",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:35Z"
+    },
+    "26": {
+      "title": "Azure Blob + GCS scanners behind inventory interface",
+      "bodyHash": "0d8ce42145fdf19a",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:37Z"
+    },
+    "27": {
+      "title": "SMB/local filesystem scanner",
+      "bodyHash": "d3ab09e2191b8938",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:39Z"
+    },
+    "28": {
+      "title": "Access enrichment — last-READ signals where available",
+      "bodyHash": "10e7c2d19271e99f",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:41Z"
+    },
+    "29": {
+      "title": "Structure recommendation engine",
+      "bodyHash": "ef7b08a01fb9453b",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:43Z"
+    },
+    "30": {
+      "title": "Report integration — age, cost, options, structure sections",
+      "bodyHash": "f5a86b3efe1a9e0d",
+      "labels": [
+        "milestone-4"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T09:11:45Z"
     }
   },
   "phases": {

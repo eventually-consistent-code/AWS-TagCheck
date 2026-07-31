@@ -1,31 +1,56 @@
 ---
 milestone: 4
 ---
-# AWS-TagCheck — Roadmap
+# TagManager — Roadmap
+
+Milestone 4 — storage lifecycle optimizer. Static/unstructured data in mass
+storage: find old data by user-defined age, price what it costs to keep,
+generate management options (delete / age-out / tiering / archive), and
+recommend saner storage structures. Posture: analyze + generate artifacts;
+a human applies them. Targets: S3 first (walking skeleton), then Azure Blob,
+GCS, SMB/local filesystem.
 
 | Phase | Name | Status | Requirements |
 |-------|------|--------|--------------|
-| 1 | Foundation & guards | verified | REQ-01, REQ-02, REQ-03, REQ-04 |
-| 2 | EC2 compliance scan | verified | REQ-05 |
-| 3 | HTML report, polish & quality | in_progress | REQ-06, REQ-07, REQ-08 |
+| 1 | Inventory core & age scan | planned | REQ-01, REQ-02 |
+| 2 | Cost analysis engine | planned | REQ-03, REQ-04 |
+| 3 | Lifecycle recommendations | planned | REQ-05, REQ-06, REQ-07 |
+| 4 | Multi-backend expansion | planned | REQ-08, REQ-09, REQ-10 |
+| 5 | Structure recommendations & reporting | planned | REQ-11, REQ-12 |
 
 ## Phase notes
 
-### Phase 1 — Foundation & guards
-Python 3 layout, dependency update (boto3), credential check, account guard.
-Walking skeleton that can authenticate and refuse unsafe runs before any scan.
+### Phase 1 — Inventory core & age scan
+Backend-agnostic inventory model + scanner interface; S3 scanner collecting
+size/storage-class/LastModified; user-configurable age thresholds. Thin
+vertical slice: scan → age bands → summary output end-to-end.
 
-### Phase 2 — EC2 compliance scan
-Enumerate regions/instances, compare Environment/Product tags to
-`canonical.json`, collect noncompliance data (no report polish yet).
+### Phase 2 — Cost analysis engine
+Per-backend/per-class pricing maps, stale-data monthly cost report by
+bucket/prefix and age band, savings projections per management option
+(including transition/retrieval caveats).
 
-### Phase 3 — HTML report, polish & quality
-Generate HTML report, hide empty regions, clean copy, tests + lint green end-to-end.
+### Phase 3 — Lifecycle recommendations
+Generated, human-applied artifacts: delete manifests, S3 lifecycle policy
+JSON from age thresholds, Intelligent-Tiering configs, archive/batch move
+plans (Glacier tiers, S3 Batch Operations manifests).
+
+### Phase 4 — Multi-backend expansion
+Azure Blob + GCS scanners behind the phase-1 interface; SMB/local filesystem
+scanner (atime/mtime); access enrichment — last-READ signals from S3 access
+logs / Storage Class Analysis / FS atime, so read-hot-never-edited data isn't
+flagged stale.
+
+### Phase 5 — Structure recommendations & reporting
+Reorg proposals from observed inventory (group by data type, owner/principal,
+access frequency) with move manifests; HTML/CSV report sections for age, cost,
+options, and structure.
 
 ## Out of scope (later milestones)
 
-- Multi-resource types (RDS, S3, ELB, …) / config-driven resource matrix
-- Notifications (email/Slack/SNS)
+- Apply mode (tool executing deletes/tiering itself behind --apply)
+- CloudTrail data-event ingestion for per-object read tracking
+- Multi-resource tag matrix (RDS, ELB, …), notifications (email/Slack/SNS)
 - Replacing Jenkins/Apache publish path (remains external)
 
 ## Archived — v1
