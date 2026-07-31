@@ -10,6 +10,7 @@ from tagmanager.providers.base import ScopeConfig
 
 
 def _asset(name, asset_type, labels, location="us-central1"):
+    """Create a mock GCP asset object."""
     asset = mock.Mock()
     asset.name = name
     asset.asset_type = asset_type
@@ -19,6 +20,9 @@ def _asset(name, asset_type, labels, location="us-central1"):
 
 
 def test_list_resources_normalizes_labels_to_tags():
+    """
+    Verify list_resources normalizes GCP labels to tags and extracts asset metadata.
+    """
     client = mock.Mock()
     client.list_assets.return_value = iter([
         _asset("//compute.googleapis.com/projects/p1/zones/z/instances/web1",
@@ -38,5 +42,8 @@ def test_list_resources_normalizes_labels_to_tags():
 
 
 def test_capabilities_read_only():
+    """
+    Verify GCP provider declares read-only capability in sub-project 1.
+    """
     provider = GcpProvider(client_builder=lambda scope: mock.Mock())
     assert provider.capabilities().supports_direct_write is False
