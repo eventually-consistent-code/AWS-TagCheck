@@ -20,7 +20,10 @@ from tagmanager.storage.cost import build_cost_report
 from tagmanager.storage.lifecycle_gen import (APPLY_HEADER,
                                               build_lifecycle_configs)
 from tagmanager.storage.manifests import (DELETE_APPLY_NOTES,
+                                          BatchCopyEmitter,
                                           DeleteManifestEmitter)
+from tagmanager.storage.tiering_gen import (TIERING_APPLY_NOTE,
+                                            build_tiering_configs)
 from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.projections import project_options
 from tagmanager.storage.rollup import RollupBuilder, band_labels
@@ -93,6 +96,12 @@ def parse_args(argv):
                         help="scan mode only: stream stale objects (past the "
                              "last age band) into chunked delete-objects "
                              "JSON manifests")
+    parser.add_argument("--emit-tiering", default="", metavar="DIR",
+                        help="write per-bucket Intelligent-Tiering configs + "
+                             "APPLY.md into DIR (uses the latest saved run)")
+    parser.add_argument("--emit-batch-copy", default="", metavar="DIR",
+                        help="scan mode only: stream stale objects into "
+                             "S3 Batch Operations copy manifests (CSV)")
     return parser.parse_args(argv)
 
 
@@ -427,6 +436,98 @@ def _analyze_latest(settings, args):
     return _post_scan_outputs(session, run, args)
 
 
+def _emit_tiering(session, run, args):
+    """
+    Generate per-bucket Intelligent-Tiering configs into a directory.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun to generate from
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK, 4 nothing generated
+    """
+    out_dir = pathlib.Path(args.emit_tiering)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    configs, skips = build_tiering_configs(
+        stats_for_run(session, run.id), run.age_band_days)
+    if not configs:
+        LOG.error("no tiering configs to generate — nothing stale and "
+                  "eligible in the latest run")
+        return 4
+
+    print("generating tiering configs...")
+    apply_lines = ["# Intelligent-Tiering configs — how to apply", "",
+                   TIERING_APPLY_NOTE, ""]
+    for bucket, bucket_configs in sorted(configs.items()):
+        for config in bucket_configs:
+            path = out_dir / f"{bucket}.{config['Id']}.json"
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(config, handle, indent=2)
+                handle.write("\n")
+            apply_lines.extend([
+                f"## {bucket} — {config['Id']}", "", "```bash",
+                "aws s3api put-bucket-intelligent-tiering-configuration \\",
+                f"  --bucket {bucket} --id {config['Id']} \\",
+                f"  --intelligent-tiering-configuration file://{path.name}",
+                "```", ""])
+        print(f"  {bucket}: {len(bucket_configs)} config(s)")
+    for skip in skips:
+        print(f"  skipped: {skip}")
+    with open(out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
+        handle.write("\n".join(apply_lines))
+    print(f"tiering configs saved to {out_dir}/.")
+    return 0
+
+
+def _report_batch_copy(emitter, age_band_days):
+    """
+    Close a batch-copy emitter, write APPLY.md with the create-job recipe.
+
+    :param emitter: BatchCopyEmitter
+    :param age_band_days: run thresholds (drives the recommended class)
+    """
+    summary = emitter.close()
+    if not summary:
+        print("no objects past the last age band — no batch-copy manifests.")
+        return
+    target = "DEEP_ARCHIVE" if age_band_days[-1] >= 365 else "GLACIER"
+    lines = [
+        "# Batch Operations copy manifests — how to apply", "",
+        "Manifests are `S3BatchOperations_CSV_20180820` (bucket,key; keys "
+        "URL-encoded). Upload each CSV to S3, get its ETag "
+        "(`aws s3api head-object`), then create the job in the "
+        "DESTINATION region:", "",
+        "```bash",
+        "aws s3control create-job \\",
+        "  --account-id <ACCOUNT_ID> --region <DEST_REGION> \\",
+        "  --operation '{\"S3PutObjectCopy\": {\"TargetResource\": "
+        "\"arn:aws:s3:::<DEST_BUCKET>\", "
+        f"\"StorageClass\": \"{target}\"}}' \\",
+        "  --manifest '{\"Spec\": {\"Format\": "
+        "\"S3BatchOperations_CSV_20180820\", \"Fields\": "
+        "[\"Bucket\",\"Key\"]}, \"Location\": {\"ObjectArn\": "
+        "\"arn:aws:s3:::<MANIFEST_BUCKET>/<manifest>.csv\", "
+        "\"ETag\": \"<ETAG>\"}}' \\",
+        "  --report '{\"Bucket\": \"arn:aws:s3:::<REPORT_BUCKET>\", "
+        "\"Format\": \"Report_CSV_20180820\", \"Enabled\": true, "
+        "\"ReportScope\": \"AllTasks\"}' \\",
+        "  --priority 10 --role-arn <BATCH_ROLE_ARN>",
+        "```", "",
+        "Role trust principal: `batchoperations.s3.amazonaws.com`. "
+        "Batch copy handles objects up to 5 GB — larger objects are in "
+        "the `.skipped.txt` sidecars and need aws s3 cp or multipart "
+        "copy.", "",
+    ]
+    for bucket, info in sorted(summary.items()):
+        print(f"  {bucket}: {info['keys']} copy candidate(s), "
+              f"{info['skipped_large']} skipped (>5 GB)")
+        lines.append(f"- `{bucket}`: {info['keys']} keys"
+                     + (f", {info['skipped_large']} skipped >5 GB"
+                        if info["skipped_large"] else ""))
+    with open(emitter.out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    print(f"batch-copy manifests saved to {emitter.out_dir}/.")
+
+
 def _report_delete_manifests(emitter):
     """
     Close a delete emitter, write its APPLY.md, and print the summary.
@@ -466,7 +567,11 @@ def _post_scan_outputs(session, run, args):
         if rc:
             return rc
     if args.emit_lifecycle:
-        return _emit_lifecycle(session, run, args)
+        rc = _emit_lifecycle(session, run, args)
+        if rc:
+            return rc
+    if args.emit_tiering:
+        return _emit_tiering(session, run, args)
     return 0
 
 
@@ -502,15 +607,15 @@ def main(argv=None, provider=None):
     settings = get_settings()
 
     if not args.bucket and not (args.cost_report or args.project_savings
-                                or args.emit_lifecycle):
+                                or args.emit_lifecycle or args.emit_tiering):
         LOG.error("nothing to do — pass --bucket to scan, or --cost-report / "
-                  "--project-savings / --emit-lifecycle to work from the "
-                  "latest saved run")
+                  "--project-savings / --emit-lifecycle / --emit-tiering "
+                  "to work from the latest saved run")
         return 4
 
-    if args.emit_delete_manifests and not args.bucket:
-        LOG.error("--emit-delete-manifests needs a scan — rollups keep no "
-                  "object keys; pass --bucket")
+    if (args.emit_delete_manifests or args.emit_batch_copy) and not args.bucket:
+        LOG.error("key-level manifests need a scan — rollups keep no object "
+                  "keys; pass --bucket")
         return 4
 
     if not args.bucket:
@@ -537,6 +642,9 @@ def main(argv=None, provider=None):
     if args.emit_delete_manifests:
         emitters.append(DeleteManifestEmitter(
             args.emit_delete_manifests, stale_after_days=age_band_days[-1]))
+    if args.emit_batch_copy:
+        emitters.append(BatchCopyEmitter(
+            args.emit_batch_copy, stale_after_days=age_band_days[-1]))
 
     print("scanning storage...")
     skips = scan_buckets(provider, args.bucket, args.prefix, builder,
@@ -554,7 +662,10 @@ def main(argv=None, provider=None):
         print(f"csv saved to {args.csv_out}.")
 
     for emitter in emitters:
-        _report_delete_manifests(emitter)
+        if isinstance(emitter, DeleteManifestEmitter):
+            _report_delete_manifests(emitter)
+        else:
+            _report_batch_copy(emitter, age_band_days)
 
     return _post_scan_outputs(session, run, args)
 

@@ -140,8 +140,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T10:56:31Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T10:58:35Z"
     },
     "24": {
       "title": "Age-out rule generator — S3 lifecycle policy JSON",
@@ -159,8 +159,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:35Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T10:58:42Z"
     },
     "26": {
       "title": "Azure Blob + GCS scanners behind inventory interface",

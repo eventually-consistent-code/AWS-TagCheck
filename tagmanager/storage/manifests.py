@@ -9,10 +9,12 @@ Author(s): John Reed
 import datetime
 import json
 import pathlib
+import urllib.parse
 
 # Constants
 
 DELETE_CHUNK_SIZE = 1000
+BATCH_COPY_MAX_BYTES = 5 * 1024 ** 3
 
 DELETE_APPLY_NOTES = [
     "Manifests are a point-in-time proposal from this scan — objects "
@@ -92,3 +94,74 @@ class DeleteManifestEmitter:
         return {container: {"files": self._files.get(container, 0),
                             "keys": count}
                 for container, count in self._counts.items()}
+
+
+class BatchCopyEmitter:
+    """
+    Stream stale objects into S3 Batch Operations copy manifests
+    (S3BatchOperations_CSV_20180820: bucket,key with URL-encoded keys).
+
+    Batch copy handles objects up to 5 GB — larger ones land in a sidecar
+    skip list instead of poisoning the job.
+    """
+
+    def __init__(self, out_dir, stale_after_days, now=None):
+        """
+        :param out_dir: directory manifests are written into
+        :param stale_after_days: age threshold in days (>= is stale)
+        :param now: timezone-aware "now" for age math (default: UTC now)
+        """
+        self.out_dir = pathlib.Path(out_dir)
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.stale_after_days = stale_after_days
+        self.now = now or datetime.datetime.now(datetime.timezone.utc)
+        self._handles = {}
+        self._skip_handles = {}
+        self._counts = {}
+        self._skipped = {}
+
+    def _handle_for(self, container, registry, suffix):
+        """Open (once) and return the output handle for a bucket."""
+        if container not in registry:
+            path = self.out_dir / f"{container}{suffix}"
+            # Streaming writer — closed in close(); with-block can't span
+            # the emitter's lifetime.
+            # pylint: disable-next=consider-using-with
+            registry[container] = open(path, "w", encoding="utf-8")
+        return registry[container]
+
+    def offer(self, obj):
+        """
+        Consider one streamed object; write a manifest line when stale.
+
+        :param obj: StorageObject
+        """
+        age_days = (self.now - obj.last_modified).total_seconds() / 86400.0
+        if age_days < self.stale_after_days:
+            return
+        if obj.size_bytes > BATCH_COPY_MAX_BYTES:
+            handle = self._handle_for(obj.container, self._skip_handles,
+                                      ".batch-copy.skipped.txt")
+            handle.write(f"{obj.key}\t{obj.size_bytes}\n")
+            self._skipped[obj.container] = (
+                self._skipped.get(obj.container, 0) + 1)
+            return
+        handle = self._handle_for(obj.container, self._handles,
+                                  ".batch-copy.csv")
+        encoded_key = urllib.parse.quote(obj.key, safe="/")
+        handle.write(f"{obj.container},{encoded_key}\n")
+        self._counts[obj.container] = self._counts.get(obj.container, 0) + 1
+
+    def close(self):
+        """
+        Close every open file and report what was written.
+
+        :returns: dict of bucket -> {"keys": n, "skipped_large": n}
+        """
+        for handle in list(self._handles.values()) + list(
+                self._skip_handles.values()):
+            handle.close()
+        buckets = set(self._counts) | set(self._skipped)
+        return {container: {"keys": self._counts.get(container, 0),
+                            "skipped_large": self._skipped.get(container, 0)}
+                for container in buckets}
