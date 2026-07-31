@@ -83,6 +83,15 @@
       ],
       "state": "closed",
       "updatedAt": "2026-07-30T08:37:31Z"
+    },
+    "18": {
+      "title": "Phase 3 verify: lint gate red — pylint 8.36 with E0611 no-name-in-module flood across tagmanager submodules; static_analysis.sh exits nonzero",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:bug"
+      ],
+      "state": "closed",
+      "updatedAt": "2026-07-31T09:09:44Z"
     }
   },
   "phases": {

@@ -1,5 +1,5 @@
 ---
-milestone: 3
+milestone: 4
 ---
 # AWS-TagCheck — Roadmap
 
@@ -31,3 +31,7 @@ Generate HTML report, hide empty regions, clean copy, tests + lint green end-to-
 ## Archived — v1
 
 Modernized AWS-TagCheck: Python 3 + boto3 foundation with credential/account guards, multi-region EC2 Environment/Product scan vs canonical.json, stdlib HTML report with empty-region polish, and pytest + lint green. — see milestones/v1/
+
+## Archived — v3
+
+Milestone 3: HTML compliance report shipped end-to-end — multi-region EC2 Environment/Product scan vs canonical.json, HTML report with empty-region polish, S3 report/gold upload, platform-core package (providers/scanner/serve/scheduler) merged, 82 tests + pylint 10.00 green. — see milestones/v3/
