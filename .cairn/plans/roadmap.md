@@ -13,7 +13,7 @@ Destructive-surface posture unchanged: nothing writes to cloud state.
 | Phase | Name | Status | Requirements |
 |-------|------|--------|--------------|
 | 6 | Storage service layer | planned | REQ-07, REQ-08 |
-| 7 | Storage web app | planned | REQ-09, REQ-10 |
+| 7 | Storage web app | planned | REQ-09, REQ-10, REQ-12 |
 | 8 | Container packaging | planned | REQ-11 |
 | 1 | Data type signals | planned | REQ-01, REQ-02 |
 | 2 | CloudTrail read tracking | planned | REQ-03 |
@@ -33,7 +33,10 @@ serve, scheduler-pattern overlap guard.
 Write-side UI: configure targets, trigger scans, watch job progress;
 interactive cost/savings/recommendations pages; artifact generation +
 zip download from the browser. OIDC-gated; age-basis labels and estimate
-disclaimers on every page.
+disclaimers on every page. Plus the TagManager rebrand (REQ-12): the
+AWS- prefix drops from every user surface — the product is multi-cloud;
+GitHub repo already renamed (2026-07-31), aws-tag-manager entry point
+kept as a compatibility alias.
 
 ### Phase 8 — Container packaging
 `docker compose up` = the full web app: artifact volume, credential env

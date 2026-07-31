@@ -363,6 +363,16 @@
       ],
       "state": "closed",
       "updatedAt": "2026-07-31T14:41:51Z"
+    },
+    "47": {
+      "title": "Rebrand to TagManager — multi-cloud naming across user surfaces",
+      "bodyHash": "737163e5a830da83",
+      "labels": [
+        "milestone-5",
+        "web-app"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T14:46:12Z"
     }
   },
   "phases": {

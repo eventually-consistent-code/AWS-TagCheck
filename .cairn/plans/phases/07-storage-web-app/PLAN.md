@@ -1,5 +1,5 @@
 ---
-issues: [43, 44]
+issues: [43, 44, 47]
 ---
 # Phase 7: storage web app — Plan
 
