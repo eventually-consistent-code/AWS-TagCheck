@@ -11,6 +11,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from tagmanager.models.base import Base
 
 
+def _utc_now():
+    """
+    Return current UTC time with timezone awareness.
+
+    :returns: timezone-aware datetime.datetime in UTC
+    """
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 class Resource(Base):  # pylint: disable=too-few-public-methods
     """Current normalized state of one cloud resource."""
 
@@ -35,7 +44,7 @@ class ScanRun(Base):  # pylint: disable=too-few-public-methods
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     started_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow)
+        DateTime, default=_utc_now)
     finished_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="running")
     resources_seen: Mapped[int] = mapped_column(Integer, default=0)
