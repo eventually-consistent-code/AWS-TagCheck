@@ -144,7 +144,8 @@ def render_storage_report(run, stats, cost_report=None, projections=None):
         _structure_section(
             list(run.structure_recs or []),
             out_of_scope_notes(
-                any(getattr(s, "data_type", "") for s in stats))),
+                any(getattr(s, "data_type", "") for s in stats),
+                bool(run.request_rates))),
         "<h2>Generated artifacts</h2>",
         _artifacts_section(list(run.artifacts or [])),
         "</body></html>",

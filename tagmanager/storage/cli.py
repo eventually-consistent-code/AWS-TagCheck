@@ -368,34 +368,39 @@ def _print_emitter_report(report):
     print(f"batch-copy manifests saved to {report.out_dir}/.")
 
 
-def _resolve_access_index(args):
+def _resolve_log_paths(args):
     """
-    Build the last-read enrichment index from access logs and/or
-    CloudTrail data-event logs.
+    Glob the access-log and CloudTrail flags to file-path tuples.
+
+    Prints the CloudTrail cost caveat when those logs are used. The
+    service builds the index + rates in one pass and returns them in
+    ScanResult.access_report (printed after the scan).
 
     :param args: parsed CLI namespace
-    :returns: (index or None, exit-code-or-0) — nonzero rc means a glob
-        matched no files
+    :returns: (access_files tuple, cloudtrail_files tuple, exit-code-or-0)
     """
     access_files = _glob_or_none(args.access_logs, "--access-logs")
     if access_files is False:
-        return None, 4
+        return (), (), 4
     ct_files = _glob_or_none(args.cloudtrail_logs, "--cloudtrail-logs")
     if ct_files is False:
-        return None, 4
-    if not access_files and not ct_files:
-        return None, 0
-
+        return (), (), 4
     if ct_files:
         print("note: CloudTrail S3 data events are off by default and bill "
               "per event — parsing only what you exported, enabling nothing.")
-    report = services.build_access_report(
-        access_log_paths=access_files or (),
-        cloudtrail_paths=ct_files or ())
+    return tuple(access_files or ()), tuple(ct_files or ()), 0
+
+
+def _print_access_readiness(report):
+    """Print the enrichment readiness line from a completed scan report."""
+    if report is None:
+        return
     print(f"access index ready: {report.events} read event(s), "
           f"{report.keys} key(s) from {' + '.join(report.sources)}. ages "
           "become access-aware lower bounds (delivery is best-effort).")
-    return report.index, 0
+    if report.rates:
+        print(f"request rates estimated for {len(report.rates)} prefix(es) "
+              "(average over the log sample — peaks likely exceed it).")
 
 
 def _glob_or_none(pattern, flag_name):
@@ -427,7 +432,7 @@ def _scan(settings, args, provider):
         LOG.error("%s", err)
         return 4
 
-    access_index, index_rc = _resolve_access_index(args)
+    access_files, ct_files, index_rc = _resolve_log_paths(args)
     if index_rc:
         return index_rc
 
@@ -446,7 +451,8 @@ def _scan(settings, args, provider):
         prefix_depth=args.prefix_depth,
         rollup_owners=args.rollup_owners,
         rollup_types=args.rollup_types,
-        access_index=access_index,
+        access_log_paths=access_files,
+        cloudtrail_log_paths=ct_files,
         emit_delete_dir=args.emit_delete_manifests,
         emit_batch_copy_dir=args.emit_batch_copy,
         emit_move_plan_dir=args.emit_move_plan,
@@ -460,6 +466,7 @@ def _scan(settings, args, provider):
         LOG.error("%s", err)
         return 4
 
+    _print_access_readiness(result.access_report)
     print_summary(result.builder)
 
     if args.csv_out:

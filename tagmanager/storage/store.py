@@ -85,8 +85,8 @@ def schema_current(engine):
                    inspector.get_columns("storage_jobs")}
     return ({"small_object_count", "small_object_bytes",
              "owner", "data_type"}.issubset(stat_columns)
-            and {"access_aware", "artifacts",
-                 "structure_recs"}.issubset(run_columns)
+            and {"access_aware", "artifacts", "structure_recs",
+                 "request_rates"}.issubset(run_columns)
             and "cancel_requested" in job_columns)
 
 

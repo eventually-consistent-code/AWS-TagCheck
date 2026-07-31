@@ -96,6 +96,7 @@ class StorageScanRun(Base):  # pylint: disable=too-few-public-methods
     access_aware: Mapped[bool] = mapped_column(Boolean, default=False)
     artifacts: Mapped[list] = mapped_column(JSON, default=list)
     structure_recs: Mapped[list] = mapped_column(JSON, default=list)
+    request_rates: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods

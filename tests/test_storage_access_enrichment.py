@@ -29,17 +29,25 @@ DASH_KEY_LINE = ('79a5 mybucket [06/Feb/2026:00:00:38 +0000] 192.0.2.3 req '
 
 
 def test_parse_line_real_format():
-    """A real GET record parses to (bucket, decoded key, aware time)."""
-    bucket, key, when = parse_line(LOG_LINE)
+    """A real GET record parses to (bucket, key, time, 'read')."""
+    bucket, key, when, optype = parse_line(LOG_LINE)
     assert bucket == "mybucket"
     assert key == "reports/q1, final.pdf"
     assert when == datetime.datetime(2026, 2, 6, 0, 0, 38,
                                      tzinfo=datetime.timezone.utc)
+    assert optype == "read"
+
+
+def test_parse_line_classifies_write():
+    """PUT/POST/COPY/DELETE parse as writes (rate telemetry)."""
+    bucket, key, _, optype = parse_line(PUT_LINE)
+    assert bucket == "mybucket"
+    assert key == "reports/q1, final.pdf"
+    assert optype == "write"
 
 
 def test_parse_line_filters_noise():
-    """Non-GET ops, dash keys, and garbage return None."""
-    assert parse_line(PUT_LINE) is None
+    """Dash keys and garbage return None."""
     assert parse_line(DASH_KEY_LINE) is None
     assert parse_line("not a log line") is None
     assert parse_line("") is None

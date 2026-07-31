@@ -30,23 +30,33 @@ def _event(name="GetObject", bucket="bkt", key="logs/old.log",
 
 
 def test_parse_record_getobject():
-    """A GetObject data event yields (bucket, key, aware time)."""
-    bucket, key, when = parse_record(_event())
+    """A GetObject data event yields (bucket, key, time, 'read')."""
+    bucket, key, when, optype = parse_record(_event())
     assert bucket == "bkt"
     assert key == "logs/old.log"
     assert when == datetime.datetime(2026, 7, 30, 14, 22, 9,
                                      tzinfo=datetime.timezone.utc)
+    assert optype == "read"
 
 
 def test_parse_record_select_object_content_counts():
     """SelectObjectContent is a content read too."""
-    assert parse_record(_event(name="SelectObjectContent")) is not None
+    parsed = parse_record(_event(name="SelectObjectContent"))
+    assert parsed is not None and parsed[3] == "read"
 
 
-def test_parse_record_excludes_non_content_and_non_s3():
+def test_parse_record_classifies_writes():
+    """Put/Copy/Delete/CompleteMultipartUpload parse as writes."""
+    for name in ("PutObject", "CopyObject", "DeleteObject",
+                 "CompleteMultipartUpload"):
+        parsed = parse_record(_event(name=name))
+        assert parsed is not None and parsed[3] == "write", name
+
+
+def test_parse_record_excludes_metadata_and_non_s3():
     """HeadObject/tagging/ACL/list and non-s3 events are skipped."""
     for name in ("HeadObject", "GetObjectTagging", "GetObjectAcl",
-                 "ListObjects", "PutObject", "DeleteObject"):
+                 "ListObjects"):
         assert parse_record(_event(name=name)) is None
     assert parse_record(_event(source="ec2.amazonaws.com")) is None
     assert parse_record({"not": "an event"}) is None
@@ -59,9 +69,10 @@ def test_parse_record_arn_fallback():
         {"type": "AWS::S3::Bucket", "ARN": "arn:aws:s3:::bkt"},
         {"type": "AWS::S3::Object",
          "ARN": "arn:aws:s3:::bkt/reports/2026/q2.pdf"}])
-    bucket, key, _ = parse_record(rec)
+    bucket, key, _, optype = parse_record(rec)
     assert bucket == "bkt"
     assert key == "reports/2026/q2.pdf"
+    assert optype == "read"
 
 
 def test_load_cloudtrail_index_gzip_and_newest(tmp_path):

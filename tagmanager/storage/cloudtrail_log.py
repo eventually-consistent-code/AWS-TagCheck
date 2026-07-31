@@ -12,7 +12,7 @@ import gzip
 import json
 import logging
 
-from tagmanager.storage.access_log import fold_reads
+from tagmanager.storage.access_log import READ, WRITE, fold_reads
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.cloudtrail_log")
@@ -26,6 +26,8 @@ S3_EVENT_SOURCE = "s3.amazonaws.com"
 # (which excludes HEAD). readOnly alone is NOT a filter: tagging/ACL reads
 # are readOnly too, so the eventName allowlist is required.
 READ_EVENT_NAMES = ("GetObject", "SelectObjectContent")
+WRITE_EVENT_NAMES = ("PutObject", "CopyObject", "DeleteObject",
+                     "CompleteMultipartUpload")
 S3_OBJECT_RESOURCE = "AWS::S3::Object"
 
 
@@ -54,22 +56,28 @@ def _bucket_key_from_arn(resources):
 
 def parse_record(rec):
     """
-    One CloudTrail event -> (bucket, key, read_time) or None.
+    One CloudTrail event -> (bucket, key, time, optype) or None.
 
-    Non-S3 events, non-content-reads, and records missing a key are
-    skipped by design.
+    optype is READ (GetObject/SelectObjectContent) or WRITE
+    (Put/Copy/Delete/CompleteMultipartUpload). Non-S3 events, other
+    operations, and records missing a key are skipped.
 
     :param rec: one element of a CloudTrail file's "Records" array
-    :returns: (bucket, key, aware datetime) or None
+    :returns: (bucket, key, aware datetime, optype) or None
     """
     if not isinstance(rec, dict):
         return None
     if rec.get("eventSource") != S3_EVENT_SOURCE:
         return None
-    if rec.get("eventName") not in READ_EVENT_NAMES:
+    name = rec.get("eventName")
+    if name in READ_EVENT_NAMES:
+        optype = READ
+    elif name in WRITE_EVENT_NAMES:
+        optype = WRITE
+    else:
         return None
-    read_time = _parse_time(rec.get("eventTime", ""))
-    if read_time is None:
+    when = _parse_time(rec.get("eventTime", ""))
+    if when is None:
         return None
 
     params = rec.get("requestParameters") or {}
@@ -79,7 +87,7 @@ def parse_record(rec):
         bucket, key = _bucket_key_from_arn(rec.get("resources"))
     if not bucket or not key:
         return None
-    return bucket, key, read_time
+    return bucket, key, when, optype
 
 
 def load_cloudtrail_index(paths):
@@ -92,16 +100,24 @@ def load_cloudtrail_index(paths):
     :returns: (index dict, records_used count)
     """
     paths = list(paths)
-
-    def _records():
-        for path in paths:
-            for rec in _iter_records(path):
-                yield parse_record(rec)
-
-    index, used = fold_reads(_records())
+    index, used = fold_reads(iter_events(paths))
     LOG.info("cloudtrail index: %s read events over %s keys from %s file(s).",
              used, len(index), len(paths))
     return index, used
+
+
+def iter_events(paths):
+    """
+    Yield every parsed op record (not None) from the CloudTrail files.
+
+    :param paths: iterable of local CloudTrail log file paths
+    :yields: (bucket, key, datetime, optype)
+    """
+    for path in paths:
+        for rec in _iter_records(path):
+            parsed = parse_record(rec)
+            if parsed is not None:
+                yield parsed
 
 
 def _iter_records(path):

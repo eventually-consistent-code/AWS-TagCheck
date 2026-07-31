@@ -203,6 +203,11 @@ def write_structure_proposal(directory, recs, notes, run):
         "type-split": "Suggested layout: split by data type "
                       "(`{prefix}/<type>/`) so each type gets its own "
                       "lifecycle policy and access controls.",
+        "prefix-fanout": "Spread keys across more prefixes (e.g. a hash or "
+                         "date shard under `{prefix}/`) — S3 scales request "
+                         "throughput per prefix, so more prefixes = more "
+                         "aggregate req/s. Rates are averages; peaks run "
+                         "higher.",
     }
     out_dir = pathlib.Path(directory)
     out_dir.mkdir(parents=True, exist_ok=True)

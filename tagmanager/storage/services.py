@@ -16,8 +16,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from tagmanager.config import get_settings
 from tagmanager.models.base import create_all, get_engine, session_factory
-from tagmanager.storage.access_log import load_access_index
-from tagmanager.storage.cloudtrail_log import load_cloudtrail_index
+from tagmanager.storage.access_log import fold_reads
+from tagmanager.storage.access_log import iter_events as access_iter_events
+from tagmanager.storage.cloudtrail_log import (
+    iter_events as cloudtrail_iter_events)
+from tagmanager.storage.request_rate import estimate_rates, fold_rates
 from tagmanager.storage.azure_provider import AzureBlobStorageProvider
 from tagmanager.storage.cost import build_cost_report
 from tagmanager.storage.fs_provider import FilesystemStorageProvider
@@ -94,6 +97,7 @@ class AccessIndexReport:
     keys: int
     index: dict
     sources: list = field(default_factory=list)
+    rates: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -265,34 +269,68 @@ def validated_band_targets(raw, pricing):
     return band_targets
 
 
-def build_access_report(access_log_paths=(), cloudtrail_paths=()):
+def build_access_report(access_log_paths=(), cloudtrail_paths=(),
+                        prefix_depth=None):
     """
-    Fold access-log and/or CloudTrail files into ONE enrichment index.
+    Fold access-log and/or CloudTrail files into ONE enrichment index and
+    per-prefix request rates, in a single sweep per source file.
 
-    Both sources merge — newest read wins per (bucket, key) across
-    sources — and the contributing source labels are recorded.
+    The last-read index merges across sources (newest wins); rate op
+    counts sum across sources. Rates are computed only when prefix_depth
+    is given.
 
     :param access_log_paths: S3 server-access-log file paths
     :param cloudtrail_paths: CloudTrail data-event file paths
+    :param prefix_depth: run prefix depth for rate aggregation (None
+        skips rate estimation)
     :returns: AccessIndexReport
     """
     index = {}
     events = 0
     sources = []
-    for label, loader, paths in (
-            ("S3 access logs", load_access_index, list(access_log_paths)),
-            ("CloudTrail", load_cloudtrail_index, list(cloudtrail_paths))):
+    rate_stats = {}
+    for label, iter_fn, paths in (
+            ("S3 access logs", access_iter_events, list(access_log_paths)),
+            ("CloudTrail", cloudtrail_iter_events, list(cloudtrail_paths))):
         if not paths:
             continue
-        sub_index, used = loader(paths)
+        materialized = list(iter_fn(paths))
+        used = _merge_read_index(index, materialized)
         events += used
         sources.append(label)
-        for cell_key, read_time in sub_index.items():
-            existing = index.get(cell_key)
-            if existing is None or read_time > existing:
-                index[cell_key] = read_time
+        if prefix_depth is not None:
+            _merge_rate_stats(rate_stats,
+                              fold_rates(materialized, prefix_depth))
+    rates = estimate_rates(rate_stats) if prefix_depth is not None else {}
     return AccessIndexReport(events=events, keys=len(index), index=index,
-                             sources=sources)
+                             sources=sources, rates=rates)
+
+
+def _merge_read_index(index, materialized):
+    """Fold reads from one source into the shared index; return read count."""
+    sub_index, used = fold_reads(materialized)
+    for cell_key, read_time in sub_index.items():
+        existing = index.get(cell_key)
+        if existing is None or read_time > existing:
+            index[cell_key] = read_time
+    return used
+
+
+def _merge_rate_stats(into, more):
+    """Sum per-prefix op counts and union windows across sources."""
+    for key, stat in more.items():
+        existing = into.get(key)
+        if existing is None:
+            into[key] = stat
+            continue
+        existing.read_count += stat.read_count
+        existing.write_count += stat.write_count
+        if stat.window_start and (existing.window_start is None
+                                  or stat.window_start < existing.window_start):
+            existing.window_start = stat.window_start
+        if stat.window_end and (existing.window_end is None
+                                or stat.window_end > existing.window_end):
+            existing.window_end = stat.window_end
 
 
 # Scan
@@ -471,7 +509,8 @@ def _walk(provider, opts, builder, emitters, age_band_days):
                                  or opts.cloudtrail_log_paths):
         access_report = build_access_report(
             access_log_paths=opts.access_log_paths,
-            cloudtrail_paths=opts.cloudtrail_log_paths)
+            cloudtrail_paths=opts.cloudtrail_log_paths,
+            prefix_depth=builder.prefix_depth)
         access_index = access_report.index
 
     cancelled = False
@@ -484,8 +523,10 @@ def _walk(provider, opts, builder, emitters, age_band_days):
     except ScanCancelled:
         cancelled = True
         skips = [{"container": "*", "error": "scan cancelled"}]
+    rates = access_report.rates if access_report else {}
     return (_WalkOutcome(skips=skips, cancelled=cancelled,
-                         emitters=emitters, age_band_days=age_band_days),
+                         emitters=emitters, age_band_days=age_band_days,
+                         request_rates=rates),
             access_report)
 
 
@@ -497,6 +538,7 @@ class _WalkOutcome:
     cancelled: bool
     emitters: list
     age_band_days: list
+    request_rates: dict = field(default_factory=dict)
 
 
 def _persist_scan(session_maker, builder, backend, outcome):
@@ -509,6 +551,8 @@ def _persist_scan(session_maker, builder, backend, outcome):
     try:
         run = persist_rollups(session, builder, backend=backend,
                               skips=outcome.skips)
+        if outcome.request_rates:
+            run.request_rates = outcome.request_rates
         session.commit()
         if outcome.cancelled:
             run.status = "cancelled"
@@ -579,7 +623,8 @@ def recommend_structure(session, run):
 
     recs, notes = build_recommendations(
         stats_for_run(session, run.id), run.age_band_days,
-        pricing=pricing, access_aware=run.access_aware)
+        pricing=pricing, access_aware=run.access_aware,
+        request_rates=run.request_rates or {})
     run.structure_recs = recs_to_json(recs)
     session.commit()
     truncated = bool(run.structure_recs

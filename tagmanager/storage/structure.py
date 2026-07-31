@@ -23,9 +23,19 @@ MAX_PERSISTED_RECS = 50
 TOP_OWNERS_SHOWN = 3
 TOP_TYPES_SHOWN = 3
 
-REQUEST_RATE_NOTE = (
-    "request-rate fan-out and churn/expiry advice: out of scope — scans "
-    "carry no request or write telemetry")
+# Fan-out fires when a prefix's estimated AVERAGE req/s reaches this
+# fraction of AWS's per-prefix PEAK ceiling — peaks run well above the
+# average, so a modest fraction already implies ceiling breaches.
+FANOUT_CEILING_FRACTION = 0.30
+READ_CEILING_RPS = 5500
+WRITE_CEILING_RPS = 3500
+
+NO_RATES_NOTE = (
+    "request-rate fan-out: available only when the scan folded access "
+    "logs / CloudTrail (--access-logs / --cloudtrail-logs)")
+CHURN_NOTE = (
+    "churn / expiry-in-place advice: out of scope — no write-history "
+    "telemetry yet")
 NO_TYPES_NOTE = (
     "data-type grouping: available only when the scan used --rollup-types")
 
@@ -62,17 +72,22 @@ class _PrefixSignals:  # pylint: disable=too-many-instance-attributes
     fresh_band_label: str = ""
 
 
-def out_of_scope_notes(types_recorded):
+def out_of_scope_notes(types_recorded, rates_recorded=False):
     """
     The out-of-scope honesty notes for a run.
 
-    The data-type note retires when the scan actually recorded types
-    (--rollup-types) — the gap closed — and otherwise says how to get it.
+    Each note retires when the run actually carries its signal: the
+    data-type note when --rollup-types was used, the fan-out note when
+    rates were folded. The churn note stays until phase-4's write-history
+    telemetry lands.
 
     :param types_recorded: whether any cell carried a data type
+    :param rates_recorded: whether the run folded request rates
     :returns: list of note strings
     """
-    notes = [REQUEST_RATE_NOTE]
+    notes = [CHURN_NOTE]
+    if not rates_recorded:
+        notes.insert(0, NO_RATES_NOTE)
     if not types_recorded:
         notes.insert(0, NO_TYPES_NOTE)
     return notes
@@ -239,13 +254,51 @@ def _effective_rates(stats, pricing):
             for sclass, size in aggregate_class_bytes(stats, pricing).items()}
 
 
-def _build_one_rec(container, prefix, sig, access_aware, rates):
+def _prefix_loc(container, prefix):
+    """The 'container/prefix' key the rate map uses ('container' if root)."""
+    return f"{container}/{prefix}" if prefix else container
+
+
+def _fanout_rationale(rate):
+    """(kind, rationale) when a rate breaches the fan-out trigger, else None."""
+    read_rps = rate.get("read_rps", 0)
+    write_rps = rate.get("write_rps", 0)
+    read_hit = read_rps >= FANOUT_CEILING_FRACTION * READ_CEILING_RPS
+    write_hit = write_rps >= FANOUT_CEILING_FRACTION * WRITE_CEILING_RPS
+    if not (read_hit or write_hit):
+        return None
+    hot = (f"reads ~{read_rps:.0f}/s vs the {READ_CEILING_RPS}/s ceiling"
+           if read_hit else
+           f"writes ~{write_rps:.0f}/s vs the {WRITE_CEILING_RPS}/s ceiling")
+    return ("prefix-fanout",
+            f"{hot} (average over a {rate.get('window_s', 0):.0f}s sample — "
+            "peaks likely exceed it) — spread keys across more prefixes so "
+            "aggregate throughput scales past the per-prefix limit and "
+            "503 Slow Down errors ease")
+
+
+@dataclass
+class _RecContext:
+    """Run-level inputs shared by every per-prefix recommendation."""
+
+    access_aware: bool
+    rates: dict            # storage class -> effective $/GB-mo
+    request_rates: dict    # "container/prefix" -> rate estimate
+
+
+def _build_one_rec(container, prefix, sig, ctx):
     """
     One Recommendation for a prefix's signals, or None when nothing fires.
 
+    Fan-out (a live throughput ceiling) takes precedence over every
+    lifecycle kind.
+
     :returns: Recommendation or None
     """
-    picked = _recommend_for_prefix(sig, access_aware)
+    rate = ctx.request_rates.get(_prefix_loc(container, prefix))
+    picked = _fanout_rationale(rate) if rate else None
+    if picked is None:
+        picked = _recommend_for_prefix(sig, ctx.access_aware)
     if picked is None:
         return None
     kind, rationale = picked
@@ -254,38 +307,64 @@ def _build_one_rec(container, prefix, sig, access_aware, rates):
     return Recommendation(
         kind=kind, container=container, prefix=prefix, rationale=rationale,
         monthly_cost_at_stake=(sig.cold_bytes / BYTES_PER_GB
-                               * _cold_rate(sig, rates)),
+                               * _cold_rate(sig, ctx.rates)),
         top_owners=[owner for owner, _ in owners[:TOP_OWNERS_SHOWN]],
         top_types=[t for t, _ in types[:TOP_TYPES_SHOWN]])
 
 
 def build_recommendations(stats, age_band_days, pricing=None,
-                          access_aware=False):
+                          access_aware=False, request_rates=None):
     """
     Recommendations for one run, keyed per prefix, priciest first.
 
     Owner slices aggregate into attribution (top_owners) — one prefix
-    never yields two recommendations.
+    never yields two recommendations. A per-prefix request rate past the
+    fan-out trigger outranks every lifecycle kind.
 
     :param stats: StoragePrefixStat rows
     :param age_band_days: run thresholds
     :param pricing: optional PricingTable for $-at-stake attribution
     :param access_aware: run-level access-aware flag
+    :param request_rates: run's persisted per-prefix rate map (or None)
     :returns: (recommendations list, notes list)
     """
-    fresh_label = band_labels(age_band_days)[0]
-    signals = _collect_signals(stats, fresh_label)
-    rates = _effective_rates(stats, pricing)
+    request_rates = request_rates or {}
+    signals = _collect_signals(stats, band_labels(age_band_days)[0])
+    ctx = _RecContext(access_aware=access_aware,
+                      rates=_effective_rates(stats, pricing),
+                      request_rates=request_rates)
+
+    recs = [rec for rec in (_build_one_rec(c, p, sig, ctx)
+                            for (c, p), sig in signals.items())
+            if rec is not None]
+    # Fan-out for hot prefixes whose objects fell outside the scanned set
+    # (traffic recorded, no rolled-up cells).
+    seen = {(rec.container, rec.prefix) for rec in recs}
+    recs.extend(_orphan_fanout_recs(request_rates, signals, seen))
+
+    # Fan-out sorts to the top; the rest by $ at stake.
+    recs.sort(key=lambda rec: (rec.kind != "prefix-fanout",
+                               -rec.monthly_cost_at_stake))
     types_recorded = any(getattr(stat, "data_type", "") for stat in stats)
+    return recs, out_of_scope_notes(types_recorded, bool(request_rates))
 
-    recs = []
-    for (container, prefix), sig in signals.items():
-        rec = _build_one_rec(container, prefix, sig, access_aware, rates)
-        if rec is not None:
-            recs.append(rec)
 
-    recs.sort(key=lambda rec: -rec.monthly_cost_at_stake)
-    return recs, out_of_scope_notes(types_recorded)
+def _orphan_fanout_recs(request_rates, signals, seen):
+    """Fan-out recs for rate-only prefixes (no matching rolled-up cells)."""
+    signal_locs = {_prefix_loc(c, p) for (c, p) in signals}
+    out = []
+    for loc, rate in request_rates.items():
+        if loc in signal_locs:
+            continue
+        picked = _fanout_rationale(rate)
+        if picked is None:
+            continue
+        container, _, prefix = loc.partition("/")
+        if (container, prefix) in seen:
+            continue
+        out.append(Recommendation(kind=picked[0], container=container,
+                                  prefix=prefix, rationale=picked[1]))
+    return out
 
 
 def recs_to_json(recs):
