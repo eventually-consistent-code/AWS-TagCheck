@@ -333,8 +333,8 @@
         "web-app"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T14:53:53Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T14:58:49Z"
     },
     "44": {
       "title": "Storage insights UI + artifact downloads",
@@ -343,8 +343,9 @@
         "milestone-5",
         "web-app"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T13:25:00Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T14:58:59Z"
     },
     "45": {
       "title": "Container packaging — one-command web app, CLI preserved",

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Storage cost</h2>
+{% include "_insights_nav.html" %}
+{% if msg %}<p><b>{{ msg }}</b></p>{% endif %}
+
+{% if not run %}
+<p>no saved {{ backend }} runs — scan first from
+<a href="/storage/targets">Targets</a>.</p>
+{% elif report %}
+<p>(estimate — list pricing, {{ report.region }}, snapshot
+{{ report.as_of_date }}{% if run.access_aware %};
+ages are access-aware lower bounds{% else %};
+age = last modified only{% endif %} — this is not a bill)
+· <a href="/storage/runs/{{ run.id }}">run {{ run.id }} artifacts</a></p>
+<table>
+  <tr><th>location</th><th>class</th><th>age band</th><th>monthly</th></tr>
+  {% for row in report.rows[:50] %}
+  <tr>
+    <td>{{ row.container }}{% if row.prefix %}/{{ row.prefix }}{% endif %}</td>
+    <td>{{ row.storage_class }}</td>
+    <td>{{ row.age_band }}</td>
+    <td>${{ "%.2f" | format(row.monthly_cost) }}/mo</td>
+  </tr>
+  {% endfor %}
+</table>
+<p><b>total: ${{ "%.2f" | format(report.total_monthly_cost) }}/mo</b></p>
+{% endif %}
+{% endblock %}

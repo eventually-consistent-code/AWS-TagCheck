@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Structure recommendations</h2>
+{% include "_insights_nav.html" %}
+{% if msg %}<p><b>{{ msg }}</b></p>{% endif %}
+
+{% if not run %}
+<p>no saved {{ backend }} runs — scan first from
+<a href="/storage/targets">Targets</a>.</p>
+{% elif result %}
+<p>({% if run.access_aware %}ages are access-aware lower bounds{% else %}age = last modified only{% endif %}
+— $ figures are list-price estimates)
+· <a href="/storage/runs/{{ run.id }}">run {{ run.id }} artifacts</a></p>
+{% if not result.recs %}
+<p>no reorg recommended — the layout already fits prefix-scoped
+lifecycle rules.</p>
+{% else %}
+<table>
+  <tr><th>kind</th><th>location</th><th>rationale</th><th>at stake</th>
+      <th>top owners</th></tr>
+  {% for rec in result.recs %}
+  <tr>
+    <td>{{ rec.kind }}</td>
+    <td>{{ rec.container }}{% if rec.prefix %}/{{ rec.prefix }}{% endif %}</td>
+    <td>{{ rec.rationale }}</td>
+    <td>{% if rec.monthly_cost_at_stake %}${{ "%.2f" | format(rec.monthly_cost_at_stake) }}/mo{% else %}—{% endif %}</td>
+    <td>{{ rec.top_owners | join(", ") }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+<ul>
+  {% for note in result.notes %}<li>{{ note }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

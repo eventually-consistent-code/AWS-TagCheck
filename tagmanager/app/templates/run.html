@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Run {{ run.id }} — artifacts</h2>
+{% if msg %}<p><b>{{ msg }}</b></p>{% endif %}
+<p>
+  backend: <b>{{ run.backend }}</b> ·
+  scanned: {{ run.started_at.date() if run.started_at else "?" }} ·
+  objects: {{ run.objects_seen }} · status: {{ run.status }}
+</p>
+<p>Key-level manifests (delete / batch-copy / move plans) are scan-time
+CLI artifacts — see the technical reference.</p>
+
+<h3>Generate</h3>
+{% for kind in kinds %}
+<form method="post" action="/storage/runs/{{ run.id }}/artifacts/{{ kind }}"
+      style="display:inline">
+  <button type="submit">{{ kind }}</button>
+</form>
+{% endfor %}
+
+<h3>Recorded artifacts</h3>
+{% if artifacts %}
+<table>
+  <tr><th>kind</th><th>directory</th><th>counts</th><th></th></tr>
+  {% for entry in artifacts %}
+  <tr>
+    <td>{{ entry.kind }}</td>
+    <td>{{ entry.dir }}</td>
+    <td>{{ entry.counts }}</td>
+    <td><a href="/storage/runs/{{ run.id }}/artifacts/{{ entry.kind.split('-')[0] }}/download">download zip</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>none yet — generate above.</p>
+{% endif %}
+{% endblock %}

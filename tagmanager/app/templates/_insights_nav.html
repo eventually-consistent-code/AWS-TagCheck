@@ -1,0 +1,8 @@
+<p>
+  {% for opt in backends %}
+  <a href="?backend={{ opt }}">{% if opt == backend %}<b>{{ opt }}</b>{% else %}{{ opt }}{% endif %}</a>
+  {% endfor %}
+  · <a href="/storage/cost?backend={{ backend }}">cost</a>
+  · <a href="/storage/savings?backend={{ backend }}">savings</a>
+  · <a href="/storage/recommendations?backend={{ backend }}">recommendations</a>
+</p>

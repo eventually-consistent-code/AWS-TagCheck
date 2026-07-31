@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Savings options</h2>
+{% include "_insights_nav.html" %}
+{% if msg %}<p><b>{{ msg }}</b></p>{% endif %}
+
+{% if not run %}
+<p>no saved {{ backend }} runs — scan first from
+<a href="/storage/targets">Targets</a>.</p>
+{% elif projections %}
+<p>(stale slice only — estimate, list pricing, not a bill{% if run.access_aware %};
+ages are access-aware lower bounds{% endif %})</p>
+<table>
+  <tr><th>option</th><th>monthly</th><th>annual</th><th>one-time</th>
+      <th>break-even</th><th>flag</th><th>caveats</th></tr>
+  {% for proj in projections %}
+  <tr>
+    <td>{{ proj.option }}</td>
+    <td>${{ "%.2f" | format(proj.monthly_savings) }}</td>
+    <td>${{ "%.2f" | format(proj.annual_savings) }}</td>
+    <td>${{ "%.2f" | format(proj.one_time_cost) }}</td>
+    <td>{% if proj.break_even_months is not none %}{{ "%.1f" | format(proj.break_even_months) }} mo{% else %}—{% endif %}</td>
+    <td>{% if proj.not_recommended %}<b>NOT RECOMMENDED</b>{% endif %}</td>
+    <td>{{ proj.caveats | join("; ") }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

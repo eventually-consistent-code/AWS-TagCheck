@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     scan_interval_minutes: int = 60
     age_band_days: list = [90, 365]
     storage_prefix_depth: int = 2
+    artifact_dir: str = "artifacts"
 
 
 def get_settings():

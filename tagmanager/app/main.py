@@ -13,7 +13,8 @@ from fastapi.templating import Jinja2Templates
 
 from tagmanager.app.auth import install_auth
 from tagmanager.app.queries import violations_query
-from tagmanager.app.storage_ui import storage_ui_router
+from tagmanager.app.storage_ui import (storage_insights_router,
+                                       storage_ui_router)
 from tagmanager.app.ui import ui_router
 from tagmanager.models.tables import Resource, ScanRun, Violation
 
@@ -98,6 +99,8 @@ def create_app(settings, session_maker, scheduler=None):
     app.include_router(ui_router(templates, session_maker))
     app.include_router(storage_ui_router(templates, session_maker,
                                          scheduler))
+    app.include_router(storage_insights_router(templates, session_maker,
+                                               settings))
     app.state.scheduler = scheduler
 
     app.state.settings = settings
