@@ -76,16 +76,21 @@ def estimate_rates(rate_stats, min_window_seconds=DEFAULT_MIN_WINDOW_SECONDS):
 
     :param rate_stats: fold_rates() output
     :param min_window_seconds: minimum trusted sample window
-    :returns: JSON-friendly dict {"container/prefix": {read_rps, write_rps,
-        window_s, sample_ops}} — key is "container" when prefix is empty
+    :returns: JSON-friendly dict {"container/prefix": {container, prefix,
+        read_rps, write_rps, window_s, sample_ops}} — key is "container"
+        when prefix is empty. Each value carries container/prefix
+        EXPLICITLY so consumers never re-split the key (container paths
+        can contain slashes on the fs backend).
     """
     out = {}
     for (container, prefix), stat in rate_stats.items():
         window = stat.window_seconds()
-        if window < min_window_seconds:
+        if window <= 0 or window < min_window_seconds:
             continue
         loc = f"{container}/{prefix}" if prefix else container
         out[loc] = {
+            "container": container,
+            "prefix": prefix,
             "read_rps": round(stat.read_count / window, 4),
             "write_rps": round(stat.write_count / window, 4),
             "window_s": round(window, 1),

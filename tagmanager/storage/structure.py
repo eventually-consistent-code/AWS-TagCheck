@@ -359,7 +359,10 @@ def _orphan_fanout_recs(request_rates, signals, seen):
         picked = _fanout_rationale(rate)
         if picked is None:
             continue
-        container, _, prefix = loc.partition("/")
+        # container/prefix come from the rate record itself — never
+        # re-split the loc string (fs container paths contain slashes).
+        container = rate.get("container", "")
+        prefix = rate.get("prefix", "")
         if (container, prefix) in seen:
             continue
         out.append(Recommendation(kind=picked[0], container=container,

@@ -119,6 +119,28 @@ def test_note_splits_on_rates_recorded():
     assert any("churn" in n for n in notes_with)
 
 
+def test_zero_window_never_divides():
+    """A single-instant sample (window 0) is suppressed at any guard."""
+    events = [_ev("x/y", 0), _ev("x/y", 0)]  # same instant
+    stats = fold_rates(events, prefix_depth=1)
+    assert estimate_rates(stats, min_window_seconds=0) == {}  # no ZeroDiv
+
+
+def test_orphan_fanout_handles_slashed_container():
+    """A rate-only prefix whose container path contains slashes (fs)
+    keeps its container/prefix — never re-split from the loc string."""
+    rate = {"container": "/mnt/data", "prefix": "logs",
+            "read_rps": 0.9 * READ_CEILING_RPS, "write_rps": 0,
+            "window_s": 7200, "sample_ops": 99}
+    # no stats -> the prefix is orphan (rate-only)
+    recs, _ = build_recommendations([_stat()], BANDS,
+                                    request_rates={"/mnt/data/logs": rate})
+    orphan = [r for r in recs if r.container == "/mnt/data"]
+    assert len(orphan) == 1
+    assert orphan[0].kind == "prefix-fanout"
+    assert orphan[0].prefix == "logs"
+
+
 def test_cli_persists_request_rates(tmp_path, monkeypatch):
     """A scan with --access-logs persists a request_rates map on the run."""
     monkeypatch.setenv("TAGMANAGER_DB_URL", f"sqlite:///{tmp_path / 's.db'}")
