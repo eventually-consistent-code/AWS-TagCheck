@@ -120,8 +120,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T10:11:31Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T10:15:31Z"
     },
     "22": {
       "title": "Savings projections per management option",
@@ -129,8 +129,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:30Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T10:15:39Z"
     },
     "23": {
       "title": "Deletion candidate manifests (analyze + generate, human applies)",

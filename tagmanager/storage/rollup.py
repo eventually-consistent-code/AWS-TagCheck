@@ -15,6 +15,7 @@ from dataclasses import dataclass
 DEFAULT_AGE_BAND_DAYS = [90, 365]
 DEFAULT_PREFIX_DEPTH = 2
 DEFAULT_SAMPLE_SIZE = 10
+SMALL_OBJECT_FLOOR_BYTES = 131072
 
 
 def band_labels(age_band_days):
@@ -77,6 +78,8 @@ class RollupStat:
     object_count: int = 0
     total_bytes: int = 0
     oldest_last_modified: datetime.datetime = None
+    small_object_count: int = 0
+    small_object_bytes: int = 0
 
 
 class RollupBuilder:  # pylint: disable=too-many-instance-attributes
@@ -119,6 +122,9 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
         stat = self._cells.setdefault(cell_key, RollupStat())
         stat.object_count += 1
         stat.total_bytes += obj.size_bytes
+        if obj.size_bytes < SMALL_OBJECT_FLOOR_BYTES:
+            stat.small_object_count += 1
+            stat.small_object_bytes += obj.size_bytes
         if (stat.oldest_last_modified is None
                 or obj.last_modified < stat.oldest_last_modified):
             stat.oldest_last_modified = obj.last_modified

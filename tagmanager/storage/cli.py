@@ -16,10 +16,11 @@ from tagmanager.config import get_settings
 from tagmanager.models.base import create_all, get_engine, session_factory
 from tagmanager.storage.cost import build_cost_report
 from tagmanager.storage.pricing import load_pricing
+from tagmanager.storage.projections import project_options
 from tagmanager.storage.rollup import RollupBuilder, band_labels
 from tagmanager.storage.s3_provider import S3StorageProvider
 from tagmanager.storage.store import (latest_complete_run, persist_rollups,
-                                      stats_for_run)
+                                      schema_current, stats_for_run)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.storage_cli")
@@ -68,6 +69,10 @@ def parse_args(argv):
                         help="price the rollups with the shipped snapshot")
     parser.add_argument("--cost-csv", default="",
                         help="write the cost report to this CSV path")
+    parser.add_argument("--project-savings", action="store_true",
+                        help="project per-option savings for the stale slice")
+    parser.add_argument("--savings-csv", default="",
+                        help="write the savings projections to this CSV path")
     return parser.parse_args(argv)
 
 
@@ -103,12 +108,14 @@ def write_csv(path, builder):
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["container", "prefix", "storage_class", "age_band",
-                         "object_count", "total_bytes", "oldest_last_modified"])
+                         "object_count", "total_bytes", "oldest_last_modified",
+                         "small_object_count", "small_object_bytes"])
         for (container, prefix, sclass, band), stat in sorted(builder.rollups().items()):
             writer.writerow([container, prefix, sclass, band,
                              stat.object_count, stat.total_bytes,
                              stat.oldest_last_modified.isoformat()
-                             if stat.oldest_last_modified else ""])
+                             if stat.oldest_last_modified else "",
+                             stat.small_object_count, stat.small_object_bytes])
 
 
 def print_summary(builder):
@@ -190,6 +197,85 @@ def write_cost_csv(path, report):
                              f"{row.monthly_cost:.6f}"])
 
 
+def print_projections(projections):
+    """
+    Print the per-option savings table.
+
+    :param projections: list of OptionProjection
+    """
+    print("***********************************")
+    print("*  savings projections            *")
+    print("***********************************")
+    print("(stale slice only — estimate, list pricing)")
+    print()
+    for proj in projections:
+        flag = "  NOT RECOMMENDED" if proj.not_recommended else ""
+        breakeven = (f"break-even {proj.break_even_months:.1f}mo"
+                     if proj.break_even_months is not None else "no break-even")
+        print(f"  {proj.option:<20} ${proj.monthly_savings:>10.2f}/mo  "
+              f"${proj.annual_savings:>11.2f}/yr  "
+              f"one-time ${proj.one_time_cost:.2f}  {breakeven}{flag}")
+        for caveat in proj.caveats:
+            print(f"      - {caveat}")
+    print()
+
+
+def write_savings_csv(path, projections):
+    """
+    Write the projections to CSV.
+
+    :param path: output file path
+    :param projections: list of OptionProjection
+    """
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["option", "monthly_savings_usd", "annual_savings_usd",
+                         "one_time_cost_usd", "break_even_months",
+                         "not_recommended", "caveats"])
+        for proj in projections:
+            writer.writerow([
+                proj.option, f"{proj.monthly_savings:.6f}",
+                f"{proj.annual_savings:.6f}", f"{proj.one_time_cost:.6f}",
+                "" if proj.break_even_months is None
+                else f"{proj.break_even_months:.2f}",
+                proj.not_recommended, "; ".join(proj.caveats)])
+
+
+def _run_projections(session, run, args):
+    """
+    Build, print, and optionally CSV the savings projections for one run.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun to project from
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK
+    """
+    pricing = load_pricing(provider="s3")
+    projections = project_options(stats_for_run(session, run.id), pricing,
+                                  run.age_band_days)
+    print_projections(projections)
+    if args.savings_csv:
+        write_savings_csv(args.savings_csv, projections)
+        print(f"savings csv saved to {args.savings_csv}.")
+    return 0
+
+
+def _open_session(settings):
+    """
+    Engine + schema guard + session, or None on a stale dev DB.
+
+    :param settings: Settings
+    :returns: SQLAlchemy session or None
+    """
+    engine = get_engine(settings.db_url)
+    create_all(engine)
+    if not schema_current(engine):
+        LOG.error("db schema changed — delete the dev database (%s) and "
+                  "re-scan", settings.db_url)
+        return None
+    return session_factory(engine)()
+
+
 def _run_cost_report(session, run, args):
     """
     Build, print, and optionally CSV the cost report for one run.
@@ -208,6 +294,28 @@ def _run_cost_report(session, run, args):
     return 0
 
 
+def _analyze_latest(settings, args):
+    """
+    Report-only path: price/project the latest saved run, no scan.
+
+    :param settings: Settings
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK, 4 nothing to analyze
+    """
+    session = _open_session(settings)
+    if session is None:
+        return 4
+    run = latest_complete_run(session, backend="s3")
+    if run is None:
+        LOG.error("no saved storage scan runs — scan first with --bucket")
+        return 4
+    if args.cost_report:
+        _run_cost_report(session, run, args)
+    if args.project_savings:
+        _run_projections(session, run, args)
+    return 0
+
+
 def main(argv=None, provider=None):
     """
     Run the scan and/or cost report.
@@ -222,20 +330,13 @@ def main(argv=None, provider=None):
     args = parse_args(argv)
     settings = get_settings()
 
-    if not args.bucket and not args.cost_report:
-        LOG.error("nothing to do — pass --bucket to scan and/or "
-                  "--cost-report to price the latest saved run")
+    if not args.bucket and not (args.cost_report or args.project_savings):
+        LOG.error("nothing to do — pass --bucket to scan, --cost-report "
+                  "and/or --project-savings to analyze the latest saved run")
         return 4
 
     if not args.bucket:
-        engine = get_engine(settings.db_url)
-        create_all(engine)
-        session = session_factory(engine)()
-        run = latest_complete_run(session, backend="s3")
-        if run is None:
-            LOG.error("no saved storage scan runs — scan first with --bucket")
-            return 4
-        return _run_cost_report(session, run, args)
+        return _analyze_latest(settings, args)
 
     if args.age_bands:
         try:
@@ -256,9 +357,9 @@ def main(argv=None, provider=None):
     print("scanning storage...")
     skips = scan_buckets(provider, args.bucket, args.prefix, builder)
 
-    engine = get_engine(settings.db_url)
-    create_all(engine)
-    session = session_factory(engine)()
+    session = _open_session(settings)
+    if session is None:
+        return 4
     run = persist_rollups(session, builder, backend=provider.backend_name,
                           skips=skips)
     session.commit()
@@ -271,7 +372,9 @@ def main(argv=None, provider=None):
         print(f"csv saved to {args.csv_out}.")
 
     if args.cost_report:
-        return _run_cost_report(session, run, args)
+        _run_cost_report(session, run, args)
+    if args.project_savings:
+        _run_projections(session, run, args)
 
     return 0
 

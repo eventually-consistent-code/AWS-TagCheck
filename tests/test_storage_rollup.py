@@ -125,6 +125,8 @@ def test_persist_rollups_roundtrip():
     stats = session.query(StoragePrefixStat).filter_by(scan_run_id=run.id).all()
     assert len(stats) == 2
     assert latest_complete_run(session, backend="s3").id == run.id
+    assert all(stat.small_object_count == 1 and stat.small_object_bytes in (50, 30)
+               for stat in stats)
 
 
 def test_persist_rollups_partial_on_skips():

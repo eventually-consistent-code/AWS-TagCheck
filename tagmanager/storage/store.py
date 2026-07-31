@@ -7,6 +7,8 @@ Author(s): John Reed
 
 import datetime
 
+from sqlalchemy import inspect
+
 from tagmanager.models.tables import StoragePrefixStat, StorageScanRun
 
 
@@ -50,12 +52,29 @@ def persist_rollups(session, builder, backend, skips=None):
             object_count=stat.object_count,
             total_bytes=stat.total_bytes,
             oldest_last_modified=stat.oldest_last_modified,
+            small_object_count=stat.small_object_count,
+            small_object_bytes=stat.small_object_bytes,
         ))
 
     run.status = "complete" if not skips else "partial"
     run.finished_at = _utc_now()
     session.flush()
     return run
+
+
+def schema_current(engine):
+    """
+    Check the live DB carries the columns this code writes/reads.
+
+    create_all never ALTERs existing tables, so an old dev DB fails later
+    with a bare OperationalError — this turns that into a clean early exit.
+
+    :param engine: SQLAlchemy engine
+    :returns: True when storage_prefix_stats has the current columns
+    """
+    columns = {col["name"] for col in
+               inspect(engine).get_columns("storage_prefix_stats")}
+    return {"small_object_count", "small_object_bytes"}.issubset(columns)
 
 
 def stats_for_run(session, run_id):

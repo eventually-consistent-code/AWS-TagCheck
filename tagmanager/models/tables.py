@@ -111,6 +111,8 @@ class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods
     total_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     oldest_last_modified: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=True)
+    small_object_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    small_object_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class Scope(Base):  # pylint: disable=too-few-public-methods

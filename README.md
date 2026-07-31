@@ -19,6 +19,7 @@ It started life as an AWS EC2 tag checker (that CLI still works — see the [Tec
 - **JSON API** — `/api/resources`, `/api/violations`, `/api/scans`, `/api/health` for scripting and integration.
 - **OIDC auth** — plug in any OpenID Connect identity provider, or run wide open in dev mode. Unrecognized auth config fails closed, not open.
 - **Classic AWS CLI** — the original `aws-tag-manager` EC2 scanner still ships: HTML violation reports, CSV gold-list merge, S3 publishing, CI-friendly exit codes.
+- **Storage age & cost analysis** — scan S3 buckets into age-band rollups (last-modified vs your thresholds), price what stale data costs monthly, and project per-option savings (delete / age-out rules / intelligent tiering / archive) with break-even months and small-object honesty built in.
 
 ## How it can be used
 
@@ -44,6 +45,18 @@ source virtShell.sh
 export AWS_TAGMANAGER_EXPECTED_ACCOUNT=123456789012
 ./aws_tag_manager.py
 ```
+
+Storage age & cost scan:
+
+```bash
+python -m tagmanager.storage.cli --bucket my-data-lake --age-bands 90,365
+python -m tagmanager.storage.cli --cost-report --project-savings
+```
+
+First command scans and prints the age-band summary; second prices the
+saved run and projects savings per management option — no rescan needed.
+All figures are list-price estimates (us-east-1 snapshot, refresh with
+`python -m tagmanager.storage.pricing_refresh`).
 
 ## Documentation
 
