@@ -1,5 +1,5 @@
 ---
-milestone: 4
+milestone: 5
 ---
 # TagManager — Roadmap
 
@@ -60,3 +60,7 @@ Modernized AWS-TagCheck: Python 3 + boto3 foundation with credential/account gua
 ## Archived — v3
 
 Milestone 3: HTML compliance report shipped end-to-end — multi-region EC2 Environment/Product scan vs canonical.json, HTML report with empty-region polish, S3 report/gold upload, platform-core package (providers/scanner/serve/scheduler) merged, 82 tests + pylint 10.00 green. — see milestones/v3/
+
+## Archived — v4
+
+Storage lifecycle optimizer shipped: multi-backend age scans (S3/Azure/GCS/filesystem) with access-aware aging, honest cost analysis and per-option savings projections, validated ready-to-apply artifacts (lifecycle configs, tiering configs, delete/batch-copy/move manifests), structure recommendations with two-pass move plans, and one-page HTML + web UI reporting. 186 tests, three adversarial verification rounds. — see milestones/v4/
