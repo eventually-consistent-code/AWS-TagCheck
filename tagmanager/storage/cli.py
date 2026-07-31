@@ -19,6 +19,8 @@ from tagmanager.models.base import create_all, get_engine, session_factory
 from tagmanager.storage.cost import build_cost_report
 from tagmanager.storage.lifecycle_gen import (APPLY_HEADER,
                                               build_lifecycle_configs)
+from tagmanager.storage.manifests import (DELETE_APPLY_NOTES,
+                                          DeleteManifestEmitter)
 from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.projections import project_options
 from tagmanager.storage.rollup import RollupBuilder, band_labels
@@ -83,10 +85,18 @@ def parse_args(argv):
     parser.add_argument("--emit-lifecycle", default="", metavar="DIR",
                         help="write per-bucket lifecycle config JSON + "
                              "APPLY.md into DIR (uses the latest saved run)")
+    parser.add_argument("--delete-after", type=int, default=None,
+                        metavar="DAYS",
+                        help="add Expiration rules to --emit-lifecycle "
+                             "(the async, AWS-managed mass-delete path)")
+    parser.add_argument("--emit-delete-manifests", default="", metavar="DIR",
+                        help="scan mode only: stream stale objects (past the "
+                             "last age band) into chunked delete-objects "
+                             "JSON manifests")
     return parser.parse_args(argv)
 
 
-def scan_buckets(provider, buckets, prefix, builder):
+def scan_buckets(provider, buckets, prefix, builder, emitters=()):
     """
     Stream every bucket through the rollup builder, isolating failures.
 
@@ -94,6 +104,7 @@ def scan_buckets(provider, buckets, prefix, builder):
     :param buckets: list of bucket names
     :param prefix: key prefix scope
     :param builder: RollupBuilder
+    :param emitters: streaming manifest emitters offered every object
     :returns: list of skip records for buckets that failed
     """
     skips = []
@@ -101,6 +112,8 @@ def scan_buckets(provider, buckets, prefix, builder):
         try:
             for obj in provider.list_objects(bucket, prefix=prefix):
                 builder.add(obj)
+                for emitter in emitters:
+                    emitter.offer(obj)
             LOG.info("%s complete...", bucket)
         except (ClientError, BotoCoreError) as err:
             LOG.warning("skipping %s: %s", bucket, err)
@@ -414,6 +427,29 @@ def _analyze_latest(settings, args):
     return _post_scan_outputs(session, run, args)
 
 
+def _report_delete_manifests(emitter):
+    """
+    Close a delete emitter, write its APPLY.md, and print the summary.
+
+    :param emitter: DeleteManifestEmitter
+    """
+    summary = emitter.close()
+    if not summary:
+        print("no objects past the last age band — no delete manifests.")
+        return
+    lines = ["# Delete manifests — how to apply", ""]
+    lines.extend(DELETE_APPLY_NOTES)
+    lines.append("")
+    for bucket, info in sorted(summary.items()):
+        print(f"  {bucket}: {info['keys']} delete candidate(s) across "
+              f"{info['files']} manifest file(s)")
+        lines.append(f"- `{bucket}`: {info['keys']} keys, "
+                     f"{info['files']} chunk file(s)")
+    with open(emitter.out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    print(f"delete manifests saved to {emitter.out_dir}/.")
+
+
 def _post_scan_outputs(session, run, args):
     """
     Optional analysis/artifact outputs after a scan (or on the latest run).
@@ -472,6 +508,11 @@ def main(argv=None, provider=None):
                   "latest saved run")
         return 4
 
+    if args.emit_delete_manifests and not args.bucket:
+        LOG.error("--emit-delete-manifests needs a scan — rollups keep no "
+                  "object keys; pass --bucket")
+        return 4
+
     if not args.bucket:
         return _analyze_latest(settings, args)
 
@@ -492,8 +533,14 @@ def main(argv=None, provider=None):
     if session is None:
         return 4
 
+    emitters = []
+    if args.emit_delete_manifests:
+        emitters.append(DeleteManifestEmitter(
+            args.emit_delete_manifests, stale_after_days=age_band_days[-1]))
+
     print("scanning storage...")
-    skips = scan_buckets(provider, args.bucket, args.prefix, builder)
+    skips = scan_buckets(provider, args.bucket, args.prefix, builder,
+                         emitters=emitters)
 
     run = persist_rollups(session, builder, backend=provider.backend_name,
                           skips=skips)
@@ -505,6 +552,9 @@ def main(argv=None, provider=None):
     if args.csv_out:
         write_csv(args.csv_out, builder)
         print(f"csv saved to {args.csv_out}.")
+
+    for emitter in emitters:
+        _report_delete_manifests(emitter)
 
     return _post_scan_outputs(session, run, args)
 
