@@ -276,8 +276,8 @@
         "milestone-5"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T17:19:11Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T17:23:46Z"
     },
     "38": {
       "title": "Per-prefix request-rate signals",
