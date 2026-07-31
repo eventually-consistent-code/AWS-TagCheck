@@ -130,8 +130,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T10:15:39Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T10:20:34Z"
     },
     "23": {
       "title": "Deletion candidate manifests (analyze + generate, human applies)",
