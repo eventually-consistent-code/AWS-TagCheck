@@ -17,13 +17,14 @@ lifecycle rules.</p>
 {% else %}
 <table>
   <tr><th>kind</th><th>location</th><th>rationale</th><th>at stake</th>
-      <th>top owners</th><th>top types</th></tr>
+      <th>confidence</th><th>top owners</th><th>top types</th></tr>
   {% for rec in result.recs %}
   <tr>
     <td>{{ rec.kind }}</td>
     <td>{{ rec.container }}{% if rec.prefix %}/{{ rec.prefix }}{% endif %}</td>
     <td>{{ rec.rationale }}</td>
     <td>{% if rec.monthly_cost_at_stake %}${{ "%.2f" | format(rec.monthly_cost_at_stake) }}/mo{% else %}—{% endif %}</td>
+    <td>{% if rec.confidence %}{{ rec.confidence }} ({{ rec.evidence | join(", ") }}){% endif %}</td>
     <td>{{ rec.top_owners | join(", ") }}</td>
     <td>{{ rec.top_types | join(", ") }}</td>
   </tr>

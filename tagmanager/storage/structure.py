@@ -30,18 +30,29 @@ FANOUT_CEILING_FRACTION = 0.30
 READ_CEILING_RPS = 5500
 WRITE_CEILING_RPS = 3500
 
+# expire-in-place fires when a prefix's AVERAGE write rate reaches this
+# fraction of the write ceiling AND the prefix still holds cold data — a
+# low bar (2%), because even modest steady writes on cold-heavy data hint
+# at churn that a transition would tax with early-delete charges.
+CHURN_WRITE_FRACTION = 0.02
+
+# Confidence labels — telemetry earns high, age-only inference earns low.
+CONF_HIGH = "high"
+CONF_MEDIUM = "medium"
+CONF_LOW = "low"
+
 NO_RATES_NOTE = (
     "request-rate fan-out: available only when the scan folded access "
     "logs / CloudTrail (--access-logs / --cloudtrail-logs)")
 CHURN_NOTE = (
-    "churn / expiry-in-place advice: out of scope — no write-history "
-    "telemetry yet")
+    "churn / expire-in-place advice: available only when the scan folded "
+    "write telemetry (--access-logs / --cloudtrail-logs)")
 NO_TYPES_NOTE = (
     "data-type grouping: available only when the scan used --rollup-types")
 
 
 @dataclass
-class Recommendation:
+class Recommendation:  # pylint: disable=too-many-instance-attributes
     """One per-prefix layout recommendation."""
 
     kind: str
@@ -51,6 +62,8 @@ class Recommendation:
     monthly_cost_at_stake: float = 0.0
     top_owners: list = field(default_factory=list)
     top_types: list = field(default_factory=list)
+    confidence: str = ""
+    evidence: list = field(default_factory=list)
 
 
 @dataclass
@@ -77,17 +90,18 @@ def out_of_scope_notes(types_recorded, rates_recorded=False):
     The out-of-scope honesty notes for a run.
 
     Each note retires when the run actually carries its signal: the
-    data-type note when --rollup-types was used, the fan-out note when
-    rates were folded. The churn note stays until phase-4's write-history
-    telemetry lands.
+    data-type note when --rollup-types was used, the fan-out AND churn
+    notes when rates were folded — write telemetry now feeds a real
+    expire-in-place recommendation, so both retire together.
 
     :param types_recorded: whether any cell carried a data type
     :param rates_recorded: whether the run folded request rates
     :returns: list of note strings
     """
-    notes = [CHURN_NOTE]
+    notes = []
     if not rates_recorded:
-        notes.insert(0, NO_RATES_NOTE)
+        notes.append(NO_RATES_NOTE)
+        notes.append(CHURN_NOTE)
     if not types_recorded:
         notes.insert(0, NO_TYPES_NOTE)
     return notes
@@ -277,6 +291,61 @@ def _fanout_rationale(rate):
             "503 Slow Down errors ease")
 
 
+def _expire_in_place_rationale(rate, sig):
+    """
+    (kind, rationale) when write telemetry shows churn on a cold-heavy
+    prefix, else None.
+
+    Fires below fan-out, above every transition kind: transitioning
+    churning/short-lived data is a money-loser, so this warning outranks
+    the transition advice it would otherwise draw. Honest by construction
+    — logs can't tell an overwrite from a first write, so the advice is
+    conditional on the objects actually being short-lived.
+    """
+    write_rps = rate.get("write_rps", 0)
+    if write_rps < CHURN_WRITE_FRACTION * WRITE_CEILING_RPS:
+        return None
+    if sig.cold_bytes == 0:
+        return None
+    cold_share = sig.cold_bytes / sig.total_bytes
+    return ("expire-in-place",
+            f"writes ~{write_rps:.1f}/s continue on this prefix while "
+            f"{cold_share:.0%} of bytes are cold — IF these are short-lived "
+            "or rewritten objects, transitioning them to a colder class "
+            "bills minimum-duration early-delete charges when they're "
+            "deleted or overwritten early; prefer a lifecycle Expiration in "
+            "place over a transition (logs can't tell an overwrite from a "
+            "first write — confirm the churn before acting)")
+
+
+def _grade(kind, access_aware):
+    """
+    (confidence, evidence) for a recommendation kind.
+
+    Telemetry-backed kinds earn high; type inference earns medium; an
+    age-only cold recommendation earns low precisely so a user without
+    access telemetry sees it is the weaker inference. On an access-aware
+    run a still-cold prefix is telemetry-VERIFIED unread (enrichment would
+    have flipped a read object fresh), so the cold-driven kinds earn high.
+
+    :param kind: the recommendation kind
+    :param access_aware: whether the run folded read activity
+    :returns: (confidence, evidence-source list)
+    """
+    if kind == "prefix-fanout":
+        return CONF_HIGH, ["request-rate telemetry"]
+    if kind == "expire-in-place":
+        return CONF_HIGH, ["write-rate telemetry"]
+    if kind == "compact-first":
+        return CONF_HIGH, ["object-size distribution"]
+    if kind == "type-split":
+        return CONF_MEDIUM, ["age", "data types"]
+    # cold-driven kinds: date-split / straight-lifecycle / zone-split.
+    if access_aware:
+        return CONF_HIGH, ["age", "access telemetry (verified unread)"]
+    return CONF_LOW, ["age (no access telemetry)"]
+
+
 @dataclass
 class _RecContext:
     """Run-level inputs shared by every per-prefix recommendation."""
@@ -290,18 +359,21 @@ def _build_one_rec(container, prefix, sig, ctx):
     """
     One Recommendation for a prefix's signals, or None when nothing fires.
 
-    Fan-out (a live throughput ceiling) takes precedence over every
-    lifecycle kind.
+    Precedence: fan-out (a live throughput ceiling) > expire-in-place
+    (don't tier churning data) > every transition kind.
 
     :returns: Recommendation or None
     """
     rate = ctx.request_rates.get(_prefix_loc(container, prefix))
     picked = _fanout_rationale(rate) if rate else None
+    if picked is None and rate:
+        picked = _expire_in_place_rationale(rate, sig)
     if picked is None:
         picked = _recommend_for_prefix(sig, ctx.access_aware)
     if picked is None:
         return None
     kind, rationale = picked
+    confidence, evidence = _grade(kind, ctx.access_aware)
     owners = sorted(sig.owner_bytes.items(), key=lambda kv: -kv[1])
     types = sorted(sig.type_bytes.items(), key=lambda kv: -kv[1])
     return Recommendation(
@@ -309,7 +381,8 @@ def _build_one_rec(container, prefix, sig, ctx):
         monthly_cost_at_stake=(sig.cold_bytes / BYTES_PER_GB
                                * _cold_rate(sig, ctx.rates)),
         top_owners=[owner for owner, _ in owners[:TOP_OWNERS_SHOWN]],
-        top_types=[t for t, _ in types[:TOP_TYPES_SHOWN]])
+        top_types=[t for t, _ in types[:TOP_TYPES_SHOWN]],
+        confidence=confidence, evidence=evidence)
 
 
 def build_recommendations(stats, age_band_days, pricing=None,
@@ -365,8 +438,10 @@ def _orphan_fanout_recs(request_rates, signals, seen):
         prefix = rate.get("prefix", "")
         if (container, prefix) in seen:
             continue
+        confidence, evidence = _grade(picked[0], access_aware=False)
         out.append(Recommendation(kind=picked[0], container=container,
-                                  prefix=prefix, rationale=picked[1]))
+                                  prefix=prefix, rationale=picked[1],
+                                  confidence=confidence, evidence=evidence))
     return out
 
 
@@ -383,6 +458,8 @@ def recs_to_json(recs):
         "monthly_cost_at_stake": round(rec.monthly_cost_at_stake, 6),
         "top_owners": rec.top_owners,
         "top_types": rec.top_types,
+        "confidence": rec.confidence,
+        "evidence": rec.evidence,
     } for rec in recs[:MAX_PERSISTED_RECS]]
     if len(recs) > MAX_PERSISTED_RECS:
         payload.append({"kind": "truncated",

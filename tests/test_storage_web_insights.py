@@ -66,12 +66,15 @@ def test_cost_and_savings_pages(tmp_path, monkeypatch):
 
 
 def test_recommendations_page(tmp_path, monkeypatch):
-    """Recommendations render with rationale and note list."""
+    """Recommendations render with rationale, confidence, and note list."""
     client, _ = _client_with_run(tmp_path, monkeypatch)
     page = client.get("/storage/recommendations")
     assert page.status_code == 200
     assert "date-split" in page.text
-    assert "out of scope" in page.text
+    assert "available only when" in page.text  # out-of-scope note list
+    # confidence column renders — an age-only run grades cold recs low
+    assert "confidence" in page.text
+    assert "age (no access telemetry)" in page.text
 
 
 def test_insights_empty_state(tmp_path, monkeypatch):

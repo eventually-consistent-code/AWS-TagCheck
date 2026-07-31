@@ -240,6 +240,9 @@ def _run_structure(session, run, args):
                  if rec.monthly_cost_at_stake else "")
         print(f"  {rec.kind:<18} {loc}{stake}")
         print(f"      {rec.rationale}")
+        if rec.confidence:
+            print(f"      confidence: {rec.confidence} "
+                  f"({', '.join(rec.evidence)})")
         if rec.top_owners:
             print(f"      top owners: {', '.join(rec.top_owners)}")
         if rec.top_types:
@@ -256,13 +259,15 @@ def _run_structure(session, run, args):
             writer = csv.writer(handle)
             writer.writerow(["kind", "container", "prefix", "rationale",
                              "monthly_cost_at_stake", "top_owners",
-                             "top_types"])
+                             "top_types", "confidence", "evidence"])
             for rec in recs:
                 writer.writerow([rec.kind, rec.container, rec.prefix,
                                  rec.rationale,
                                  f"{rec.monthly_cost_at_stake:.6f}",
                                  "; ".join(rec.top_owners),
-                                 "; ".join(rec.top_types)])
+                                 "; ".join(rec.top_types),
+                                 rec.confidence,
+                                 "; ".join(rec.evidence)])
         print(f"structure csv saved to {args.structure_csv}.")
 
     if args.emit_structure:

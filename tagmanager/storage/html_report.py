@@ -85,19 +85,22 @@ def _structure_section(recs_json, notes):
     rows = []
     for rec in recs_json:
         if rec.get("kind") == "truncated":
-            rows.append(("...", "", rec.get("note", ""), "", "", ""))
+            rows.append(("...", "", rec.get("note", ""), "", "", "", ""))
             continue
         loc = (f"{rec['container']}/{rec['prefix']}" if rec.get("prefix")
                else rec.get("container", ""))
         stake = rec.get("monthly_cost_at_stake") or 0
+        conf = rec.get("confidence", "")
+        evidence = ", ".join(rec.get("evidence", []))
         rows.append((rec.get("kind", ""), loc,
                      rec.get("rationale", ""),
                      f"${stake:,.2f}/mo" if stake else "—",
+                     f"{conf} ({evidence})" if conf else "",
                      ", ".join(rec.get("top_owners", [])),
                      ", ".join(rec.get("top_types", []))))
     note_html = "".join(f"<li>{_esc(note)}</li>" for note in notes)
     return (_table(["kind", "location", "rationale", "at stake",
-                    "top owners", "top types"], rows)
+                    "confidence", "top owners", "top types"], rows)
             + f"<ul>{note_html}</ul>")
 
 

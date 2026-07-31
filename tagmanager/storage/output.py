@@ -208,6 +208,12 @@ def write_structure_proposal(directory, recs, notes, run):
                          "throughput per prefix, so more prefixes = more "
                          "aggregate req/s. Rates are averages; peaks run "
                          "higher.",
+        "expire-in-place": "Apply a lifecycle Expiration (not a transition) "
+                           "if these objects are short-lived/rewritten — "
+                           "`--emit-lifecycle`. Transitioning churn incurs "
+                           "minimum-duration early-delete charges. Confirm "
+                           "the churn first; logs can't distinguish an "
+                           "overwrite from a first write.",
     }
     out_dir = pathlib.Path(directory)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -218,6 +224,9 @@ def write_structure_proposal(directory, recs, notes, run):
         loc = f"{rec.container}/{rec.prefix}" if rec.prefix else rec.container
         lines.extend([f"## {rec.kind} — {loc}", "", rec.rationale, "",
                       guidance[rec.kind].format(prefix=rec.prefix)])
+        if rec.confidence:
+            lines.append(f"Confidence: {rec.confidence} — evidence: "
+                         f"{', '.join(rec.evidence)}.")
         if rec.top_owners:
             lines.append(f"Top owners by bytes: {', '.join(rec.top_owners)}.")
         if rec.top_types:

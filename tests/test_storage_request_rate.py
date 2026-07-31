@@ -109,14 +109,16 @@ def test_fanout_beats_every_lifecycle_kind():
 
 
 def test_note_splits_on_rates_recorded():
-    """The fan-out note retires when rates are present; churn note stays."""
+    """Fan-out AND churn notes both retire when rates are present — write
+    telemetry now feeds a real expire-in-place rec."""
     stats = [_stat(band=">365d")]
     _, notes_without = build_recommendations(stats, BANDS)
     assert any("request-rate fan-out" in n for n in notes_without)
+    assert any("churn" in n for n in notes_without)
     _, notes_with = build_recommendations(
         stats, BANDS, request_rates={"bkt/logs": _hot_rate(0.9)})
     assert not any("request-rate fan-out" in n for n in notes_with)
-    assert any("churn" in n for n in notes_with)
+    assert not any("churn" in n for n in notes_with)
 
 
 def test_zero_window_never_divides():
