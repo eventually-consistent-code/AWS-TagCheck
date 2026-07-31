@@ -190,8 +190,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T11:21:06Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T11:25:18Z"
     },
     "29": {
       "title": "Structure recommendation engine",
