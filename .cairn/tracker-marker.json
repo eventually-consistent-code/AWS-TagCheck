@@ -302,6 +302,56 @@
       ],
       "state": "open",
       "updatedAt": "2026-07-31T12:44:18Z"
+    },
+    "41": {
+      "title": "Storage service layer — decouple flows from argparse, CLI parity kept",
+      "bodyHash": "f2fff4a49cc5bf14",
+      "labels": [
+        "milestone-5",
+        "web-app"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T13:24:53Z"
+    },
+    "42": {
+      "title": "Scan targets config + async scan jobs",
+      "bodyHash": "ad3c275f6d404bff",
+      "labels": [
+        "milestone-5",
+        "web-app"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T13:24:56Z"
+    },
+    "43": {
+      "title": "Scan control UI — targets, trigger, job status",
+      "bodyHash": "dd13c19766525814",
+      "labels": [
+        "milestone-5",
+        "web-app"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T13:24:58Z"
+    },
+    "44": {
+      "title": "Storage insights UI + artifact downloads",
+      "bodyHash": "f7524e3962cdac42",
+      "labels": [
+        "milestone-5",
+        "web-app"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T13:25:00Z"
+    },
+    "45": {
+      "title": "Container packaging — one-command web app, CLI preserved",
+      "bodyHash": "5f86338da5b388a7",
+      "labels": [
+        "milestone-5",
+        "web-app"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T13:25:03Z"
     }
   },
   "phases": {

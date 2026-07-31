@@ -3,14 +3,18 @@ milestone: 5
 ---
 # TagManager — Roadmap
 
-Milestone 5 — deeper signals. Sharpen what the optimizer knows before it
-ever acts: data-type awareness, CloudTrail read tracking, request-rate
-signals, evidence-labeled recommendations — and the apply ladder's first
-rung, a zero-write dry-run diff engine. Destructive-surface posture:
-dry-run-first ladder; nothing writes to cloud state this milestone.
+Milestone 5 — web application + deeper signals. Rescoped 2026-07-31: the
+whole optimizer becomes a containerized web application (CLI preserved as
+a first-class equal), THEN the signal work sharpens what it knows.
+**Execution order: phases 6 → 7 → 8 first, then 1 → 5** (numbers are
+identity, not order — decimal-insert rules forbid renumbering).
+Destructive-surface posture unchanged: nothing writes to cloud state.
 
 | Phase | Name | Status | Requirements |
 |-------|------|--------|--------------|
+| 6 | Storage service layer | planned | REQ-07, REQ-08 |
+| 7 | Storage web app | planned | REQ-09, REQ-10 |
+| 8 | Container packaging | planned | REQ-11 |
 | 1 | Data type signals | planned | REQ-01, REQ-02 |
 | 2 | CloudTrail read tracking | planned | REQ-03 |
 | 3 | Request rate awareness | planned | REQ-04 |
@@ -18,6 +22,23 @@ dry-run-first ladder; nothing writes to cloud state this milestone.
 | 5 | Dry-run diff engine | planned | REQ-06 |
 
 ## Phase notes
+
+### Phase 6 — Storage service layer
+Extract scan/analyze/emit flows into argparse-free services; CLI becomes a
+thin shell over them (existing CLI test suite stays green unchanged — the
+parity contract). StorageTarget config rows + background scan jobs inside
+serve, scheduler-pattern overlap guard.
+
+### Phase 7 — Storage web app
+Write-side UI: configure targets, trigger scans, watch job progress;
+interactive cost/savings/recommendations pages; artifact generation +
+zip download from the browser. OIDC-gated; age-basis labels and estimate
+disclaimers on every page.
+
+### Phase 8 — Container packaging
+`docker compose up` = the full web app: artifact volume, credential env
+passthrough, healthcheck. CLI ships in the image and on bare installs;
+parity documented in README/runbook.
 
 ### Phase 1 — Data type signals
 Extension-derived coarse type dimension in rollups (opt-in, like owner);
