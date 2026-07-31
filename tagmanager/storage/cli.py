@@ -236,6 +236,8 @@ def _run_structure(session, run, args):
         print(f"      {rec.rationale}")
         if rec.top_owners:
             print(f"      top owners: {', '.join(rec.top_owners)}")
+        if rec.top_types:
+            print(f"      top types: {', '.join(rec.top_types)}")
     for note in notes:
         print(f"  - {note}")
     if result.truncated:
@@ -247,12 +249,14 @@ def _run_structure(session, run, args):
                   encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerow(["kind", "container", "prefix", "rationale",
-                             "monthly_cost_at_stake", "top_owners"])
+                             "monthly_cost_at_stake", "top_owners",
+                             "top_types"])
             for rec in recs:
                 writer.writerow([rec.kind, rec.container, rec.prefix,
                                  rec.rationale,
                                  f"{rec.monthly_cost_at_stake:.6f}",
-                                 "; ".join(rec.top_owners)])
+                                 "; ".join(rec.top_owners),
+                                 "; ".join(rec.top_types)])
         print(f"structure csv saved to {args.structure_csv}.")
 
     if args.emit_structure:

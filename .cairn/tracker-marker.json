@@ -256,8 +256,8 @@
         "milestone-5"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T16:19:53Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T16:25:52Z"
     },
     "36": {
       "title": "Type-aware structure recommendations",
@@ -265,8 +265,9 @@
       "labels": [
         "milestone-5"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T12:44:08Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T16:26:00Z"
     },
     "37": {
       "title": "CloudTrail data-event ingestion as access-index source",

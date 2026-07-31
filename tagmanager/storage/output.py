@@ -200,6 +200,9 @@ def write_structure_proposal(directory, recs, notes, run):
                          "lifecycle transitions.",
         "straight-lifecycle": "Apply a lifecycle rule directly: "
                               "`--emit-lifecycle`.",
+        "type-split": "Suggested layout: split by data type "
+                      "(`{prefix}/<type>/`) so each type gets its own "
+                      "lifecycle policy and access controls.",
     }
     out_dir = pathlib.Path(directory)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -212,6 +215,8 @@ def write_structure_proposal(directory, recs, notes, run):
                       guidance[rec.kind].format(prefix=rec.prefix)])
         if rec.top_owners:
             lines.append(f"Top owners by bytes: {', '.join(rec.top_owners)}.")
+        if rec.top_types:
+            lines.append(f"Top types by bytes: {', '.join(rec.top_types)}.")
         lines.append("")
     lines.extend(["## Notes", ""])
     lines.extend(f"- {note}" for note in notes)

@@ -18,14 +18,16 @@ from tagmanager.storage.rollup import band_labels
 COLD_SHARE_THRESHOLD = 0.70
 SMALL_OBJECT_SHARE_THRESHOLD = 0.50
 MIXED_BAND_MIN_SHARE = 0.20
+MIXED_TYPE_MIN_SHARE = 0.20
 MAX_PERSISTED_RECS = 50
 TOP_OWNERS_SHOWN = 3
+TOP_TYPES_SHOWN = 3
 
-OUT_OF_SCOPE_NOTES = [
-    "data-type grouping: out of scope — rollups carry no content-type",
+REQUEST_RATE_NOTE = (
     "request-rate fan-out and churn/expiry advice: out of scope — scans "
-    "carry no request or write telemetry",
-]
+    "carry no request or write telemetry")
+NO_TYPES_NOTE = (
+    "data-type grouping: available only when the scan used --rollup-types")
 
 
 @dataclass
@@ -38,6 +40,7 @@ class Recommendation:
     rationale: str
     monthly_cost_at_stake: float = 0.0
     top_owners: list = field(default_factory=list)
+    top_types: list = field(default_factory=list)
 
 
 @dataclass
@@ -54,7 +57,25 @@ class _PrefixSignals:  # pylint: disable=too-many-instance-attributes
     classes: set = field(default_factory=set)
     band_bytes: dict = field(default_factory=dict)
     owner_bytes: dict = field(default_factory=dict)
+    type_bytes: dict = field(default_factory=dict)
+    cold_type_bytes: dict = field(default_factory=dict)
     fresh_band_label: str = ""
+
+
+def out_of_scope_notes(types_recorded):
+    """
+    The out-of-scope honesty notes for a run.
+
+    The data-type note retires when the scan actually recorded types
+    (--rollup-types) — the gap closed — and otherwise says how to get it.
+
+    :param types_recorded: whether any cell carried a data type
+    :returns: list of note strings
+    """
+    notes = [REQUEST_RATE_NOTE]
+    if not types_recorded:
+        notes.insert(0, NO_TYPES_NOTE)
+    return notes
 
 
 def _collect_signals(stats, fresh_label):
@@ -79,6 +100,10 @@ def _collect_signals(stats, fresh_label):
         if owner:
             sig.owner_bytes[owner] = (
                 sig.owner_bytes.get(owner, 0) + stat.total_bytes)
+        data_type = getattr(stat, "data_type", "") or ""
+        if data_type:
+            sig.type_bytes[data_type] = (
+                sig.type_bytes.get(data_type, 0) + stat.total_bytes)
         if stat.age_band == fresh_label:
             sig.fresh_bytes += stat.total_bytes
             sig.fresh_count += stat.object_count
@@ -86,7 +111,17 @@ def _collect_signals(stats, fresh_label):
             sig.cold_bytes += stat.total_bytes
             sig.cold_object_count += stat.object_count
             sig.small_object_count += stat.small_object_count
+            if data_type:
+                sig.cold_type_bytes[data_type] = (
+                    sig.cold_type_bytes.get(data_type, 0) + stat.total_bytes)
     return signals
+
+
+def _dominant_cold_type(sig):
+    """The largest-by-bytes cold data type, or '' when none recorded."""
+    if not sig.cold_type_bytes:
+        return ""
+    return max(sig.cold_type_bytes.items(), key=lambda kv: kv[1])[0]
 
 
 def _cold_rate(sig, rates):
@@ -117,14 +152,17 @@ def _recommend_for_prefix(sig, access_aware):
     cold_share = sig.cold_bytes / sig.total_bytes
     activity_word = "activity" if access_aware else "writes"
 
+    dominant = _dominant_cold_type(sig)
+    type_hint = f" (mostly {dominant})" if dominant else ""
+
     if (sig.cold_object_count
             and sig.small_object_count / sig.cold_object_count
             > SMALL_OBJECT_SHARE_THRESHOLD):
         return ("compact-first",
                 f"{sig.small_object_count} of {sig.cold_object_count} cold "
-                "objects are under 128 KiB — compact/tar before ANY tiering; "
-                "transition floors and per-object overhead make tiering "
-                "tiny objects cost money")
+                f"objects{type_hint} are under 128 KiB — compact/tar before "
+                "ANY tiering; transition floors and per-object overhead make "
+                "tiering tiny objects cost money")
 
     fresh_present = sig.fresh_bytes > 0 or sig.fresh_count > 0
     if cold_share > COLD_SHARE_THRESHOLD and fresh_present:
@@ -155,12 +193,36 @@ def _recommend_for_prefix(sig, access_aware):
                   f"{fresh_share:.0%} fresh alongside {coldest_share:.0%} "
                   "cold")
         return ("zone-split",
-                f"prefix mixes ages/classes at one level ({reason}) — "
-                "split into hot/cold zones so each zone carries exactly "
+                f"prefix mixes ages/classes at one level ({reason}{type_hint})"
+                " — split into hot/cold zones so each zone carries exactly "
                 "one lifecycle rule; rules are prefix-scoped and cannot "
                 "treat a mix")
 
-    return None
+    # type-split — LAST in precedence: nothing stronger fired.
+    return _type_split(sig)
+
+
+def _type_split(sig):
+    """
+    type-split when the prefix holds ≥2 data types each with a meaningful
+    share — the residual niche after age/class splits don't apply.
+
+    :param sig: _PrefixSignals
+    :returns: (kind, rationale) or None
+    """
+    typed = {t: b for t, b in sig.type_bytes.items() if t}
+    if len(typed) < 2 or not sig.total_bytes:
+        return None
+    big = [t for t, b in typed.items()
+           if b / sig.total_bytes >= MIXED_TYPE_MIN_SHARE]
+    if len(big) < 2:
+        return None
+    shares = ", ".join(f"{t} {typed[t] / sig.total_bytes:.0%}"
+                       for t in sorted(big, key=lambda t: -typed[t]))
+    return ("type-split",
+            f"prefix mixes data types at one level ({shares}) — split by "
+            "type (prefix/<type>/) so each type gets its own lifecycle "
+            "policy and access controls")
 
 
 def _effective_rates(stats, pricing):
@@ -175,6 +237,26 @@ def _effective_rates(stats, pricing):
         return {}
     return {sclass: pricing.effective_rate(sclass, size)
             for sclass, size in aggregate_class_bytes(stats, pricing).items()}
+
+
+def _build_one_rec(container, prefix, sig, access_aware, rates):
+    """
+    One Recommendation for a prefix's signals, or None when nothing fires.
+
+    :returns: Recommendation or None
+    """
+    picked = _recommend_for_prefix(sig, access_aware)
+    if picked is None:
+        return None
+    kind, rationale = picked
+    owners = sorted(sig.owner_bytes.items(), key=lambda kv: -kv[1])
+    types = sorted(sig.type_bytes.items(), key=lambda kv: -kv[1])
+    return Recommendation(
+        kind=kind, container=container, prefix=prefix, rationale=rationale,
+        monthly_cost_at_stake=(sig.cold_bytes / BYTES_PER_GB
+                               * _cold_rate(sig, rates)),
+        top_owners=[owner for owner, _ in owners[:TOP_OWNERS_SHOWN]],
+        top_types=[t for t, _ in types[:TOP_TYPES_SHOWN]])
 
 
 def build_recommendations(stats, age_band_days, pricing=None,
@@ -194,26 +276,16 @@ def build_recommendations(stats, age_band_days, pricing=None,
     fresh_label = band_labels(age_band_days)[0]
     signals = _collect_signals(stats, fresh_label)
     rates = _effective_rates(stats, pricing)
+    types_recorded = any(getattr(stat, "data_type", "") for stat in stats)
 
     recs = []
     for (container, prefix), sig in signals.items():
-        picked = _recommend_for_prefix(sig, access_aware)
-        if picked is None:
-            continue
-        kind, rationale = picked
-        owners = sorted(sig.owner_bytes.items(), key=lambda kv: -kv[1])
-        recs.append(Recommendation(
-            kind=kind,
-            container=container,
-            prefix=prefix,
-            rationale=rationale,
-            monthly_cost_at_stake=(sig.cold_bytes / BYTES_PER_GB
-                                   * _cold_rate(sig, rates)),
-            top_owners=[owner for owner, _ in owners[:TOP_OWNERS_SHOWN]],
-        ))
+        rec = _build_one_rec(container, prefix, sig, access_aware, rates)
+        if rec is not None:
+            recs.append(rec)
 
     recs.sort(key=lambda rec: -rec.monthly_cost_at_stake)
-    return recs, list(OUT_OF_SCOPE_NOTES)
+    return recs, out_of_scope_notes(types_recorded)
 
 
 def recs_to_json(recs):
@@ -228,6 +300,7 @@ def recs_to_json(recs):
         "rationale": rec.rationale,
         "monthly_cost_at_stake": round(rec.monthly_cost_at_stake, 6),
         "top_owners": rec.top_owners,
+        "top_types": rec.top_types,
     } for rec in recs[:MAX_PERSISTED_RECS]]
     if len(recs) > MAX_PERSISTED_RECS:
         payload.append({"kind": "truncated",

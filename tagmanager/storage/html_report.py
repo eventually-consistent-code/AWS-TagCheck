@@ -11,7 +11,7 @@ import html
 
 from tagmanager.storage.output import fmt_bytes
 from tagmanager.storage.rollup import band_labels
-from tagmanager.storage.structure import OUT_OF_SCOPE_NOTES
+from tagmanager.storage.structure import out_of_scope_notes
 
 
 def _esc(value):
@@ -76,7 +76,7 @@ def _savings_section(projections):
                    "caveats"], rows)
 
 
-def _structure_section(recs_json):
+def _structure_section(recs_json, notes):
     """Structure recommendations table from the run's persisted JSON."""
     if not recs_json:
         return ("<p>no reorg recommended — the layout already fits "
@@ -85,7 +85,7 @@ def _structure_section(recs_json):
     rows = []
     for rec in recs_json:
         if rec.get("kind") == "truncated":
-            rows.append(("...", "", rec.get("note", ""), "", ""))
+            rows.append(("...", "", rec.get("note", ""), "", "", ""))
             continue
         loc = (f"{rec['container']}/{rec['prefix']}" if rec.get("prefix")
                else rec.get("container", ""))
@@ -93,11 +93,12 @@ def _structure_section(recs_json):
         rows.append((rec.get("kind", ""), loc,
                      rec.get("rationale", ""),
                      f"${stake:,.2f}/mo" if stake else "—",
-                     ", ".join(rec.get("top_owners", []))))
-    notes = "".join(f"<li>{_esc(note)}</li>" for note in OUT_OF_SCOPE_NOTES)
+                     ", ".join(rec.get("top_owners", [])),
+                     ", ".join(rec.get("top_types", []))))
+    note_html = "".join(f"<li>{_esc(note)}</li>" for note in notes)
     return (_table(["kind", "location", "rationale", "at stake",
-                    "top owners"], rows)
-            + f"<ul>{notes}</ul>")
+                    "top owners", "top types"], rows)
+            + f"<ul>{note_html}</ul>")
 
 
 def _artifacts_section(artifacts):
@@ -140,7 +141,10 @@ def render_storage_report(run, stats, cost_report=None, projections=None):
         "<h2>Savings options</h2>",
         _savings_section(projections),
         "<h2>Structure recommendations</h2>",
-        _structure_section(list(run.structure_recs or [])),
+        _structure_section(
+            list(run.structure_recs or []),
+            out_of_scope_notes(
+                any(getattr(s, "data_type", "") for s in stats))),
         "<h2>Generated artifacts</h2>",
         _artifacts_section(list(run.artifacts or [])),
         "</body></html>",

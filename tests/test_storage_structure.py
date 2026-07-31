@@ -23,12 +23,13 @@ KIB = 1024
 
 def _stat(prefix="logs", band=">365d", sclass="STANDARD", count=10,
           total_bytes=10 * BYTES_PER_GB, small_count=0, small_bytes=0,
-          owner="", container="bkt"):
+          owner="", container="bkt", data_type=""):
     return SimpleNamespace(container=container, prefix=prefix,
                            storage_class=sclass, age_band=band,
                            object_count=count, total_bytes=total_bytes,
                            small_object_count=small_count,
-                           small_object_bytes=small_bytes, owner=owner)
+                           small_object_bytes=small_bytes, owner=owner,
+                           data_type=data_type)
 
 
 def _kinds(stats):
@@ -100,6 +101,56 @@ def test_move_plan_csv_quotes_comma_keys(tmp_path):
     assert rows[0] == ["old_key", "new_key"]
     assert rows[1] == ["logs/comma,name.log",
                        "logs/2025/03/comma,name.log"]
+
+
+def test_type_split_for_mixed_types_single_class():
+    """type-split lives in the residual niche — nothing stronger fires
+    (fresh-dominant, single class, cold spread thin so not bimodal) but
+    ≥2 data types each hold a meaningful share of the prefix."""
+    stats = [
+        # fresh, type-carrying (70% of bytes)
+        _stat(band="<90d", data_type="logs", total_bytes=40 * BYTES_PER_GB),
+        _stat(band="<90d", data_type="data", total_bytes=30 * BYTES_PER_GB),
+        # cold spread thin across both cold bands (each <20% -> not bimodal)
+        _stat(band="90-365d", data_type="logs", total_bytes=18 * BYTES_PER_GB),
+        _stat(band=">365d", data_type="data", total_bytes=12 * BYTES_PER_GB),
+    ]
+    recs, notes = build_recommendations(stats, BANDS)
+    assert {(r.container, r.prefix): r.kind for r in recs} == {
+        ("bkt", "logs"): "type-split"}
+    assert sorted(recs[0].top_types) == ["data", "logs"]
+    # types recorded -> the "no types" note retires
+    assert not any("--rollup-types" in n for n in notes)
+
+
+def test_type_split_loses_to_stronger_kinds():
+    """A prefix that also qualifies for zone-split (class mix) takes
+    zone-split — type-split is strictly last."""
+    stats = [_stat(band="90-365d", sclass="STANDARD", data_type="logs",
+                   total_bytes=40 * BYTES_PER_GB),
+             _stat(band="<90d", sclass="GLACIER", data_type="data",
+                   total_bytes=60 * BYTES_PER_GB)]
+    assert _kinds(stats) == {("bkt", "logs"): "zone-split"}
+
+
+def test_no_type_split_when_types_absent():
+    """Without recorded types, a mixed-content prefix gets no type-split
+    and the notes explain how to enable it."""
+    stats = [_stat(band=">365d", total_bytes=50 * BYTES_PER_GB),
+             _stat(band=">365d", sclass="STANDARD",
+                   total_bytes=50 * BYTES_PER_GB)]
+    recs, notes = build_recommendations(stats, BANDS)
+    assert not any(r.kind == "type-split" for r in recs)
+    assert any("--rollup-types" in n for n in notes)
+
+
+def test_single_type_no_split():
+    """One dominant type isn't a mix -> no type-split."""
+    stats = [_stat(band=">365d", data_type="logs",
+                   total_bytes=95 * BYTES_PER_GB),
+             _stat(band=">365d", data_type="data",
+                   total_bytes=5 * BYTES_PER_GB)]
+    assert not any(k == "type-split" for k in _kinds(stats).values())
 
 
 def test_fresh_only_prefix_gets_nothing():
