@@ -3,6 +3,7 @@ Purpose: Auth tests — dev bypass leaves API open; oidc mode gates routes.
 Author(s): John Reed
 """
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -53,3 +54,15 @@ def test_oidc_mode_login_redirects_to_idp(httpx_mock):
 
     response = _client("oidc").get("/login", follow_redirects=False)
     assert response.status_code in (302, 307)
+
+
+def test_unrecognized_auth_mode_raises_error():
+    """Unrecognized auth_mode (e.g., typo) raises ValueError (fail-closed)."""
+    engine = create_engine("sqlite:///:memory:",
+                           connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    create_all(engine)
+    settings = Settings(auth_mode="odic", oidc_issuer="https://idp.example",
+                        oidc_client_id="cid", oidc_client_secret="secret")
+    with pytest.raises(ValueError, match="unrecognized auth_mode"):
+        create_app(settings, session_factory(engine))

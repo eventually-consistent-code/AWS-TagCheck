@@ -39,10 +39,14 @@ def install_auth(app, settings):
 
     :param app: FastAPI app
     :param settings: Settings
+    :raises ValueError: if auth_mode is not 'none' or 'oidc'
     """
-    if settings.auth_mode != "oidc":
+    if settings.auth_mode == "none":
         LOG.info("auth mode none — running open (dev only)...")
         return
+    if settings.auth_mode != "oidc":
+        raise ValueError(
+            f"unrecognized auth_mode: {settings.auth_mode!r} (expected 'none' or 'oidc')")
 
     app.add_middleware(RequireUserMiddleware)
     app.add_middleware(SessionMiddleware, secret_key=os.environ.get(
