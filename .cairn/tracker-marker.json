@@ -322,8 +322,8 @@
         "web-app"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T14:29:25Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T14:33:37Z"
     },
     "43": {
       "title": "Scan control UI — targets, trigger, job status",
