@@ -99,8 +99,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:23Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T09:47:18Z"
     },
     "20": {
       "title": "S3 inventory scanner with user-configurable age thresholds",

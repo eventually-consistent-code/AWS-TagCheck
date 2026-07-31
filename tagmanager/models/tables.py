@@ -5,7 +5,8 @@ Author(s): John Reed
 
 import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (JSON, BigInteger, Boolean, DateTime, ForeignKey,
+                        Integer, String, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tagmanager.models.base import Base
@@ -75,6 +76,41 @@ class RuleRow(Base):  # pylint: disable=too-few-public-methods
     allowed_values: Mapped[list] = mapped_column(JSON, default=list)
     applies_cloud: Mapped[str] = mapped_column(String(16), nullable=True)
     applies_type: Mapped[str] = mapped_column(String(128), nullable=True)
+
+
+class StorageScanRun(Base):  # pylint: disable=too-few-public-methods
+    """One mass-storage inventory scan execution."""
+
+    __tablename__ = "storage_scan_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=_utc_now)
+    finished_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    backend: Mapped[str] = mapped_column(String(16))
+    objects_seen: Mapped[int] = mapped_column(BigInteger, default=0)
+    bytes_seen: Mapped[int] = mapped_column(BigInteger, default=0)
+    age_band_days: Mapped[list] = mapped_column(JSON, default=list)
+    skips: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods
+    """One aggregate cell: container + prefix + storage class + age band."""
+
+    __tablename__ = "storage_prefix_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scan_run_id: Mapped[int] = mapped_column(ForeignKey("storage_scan_runs.id"))
+    backend: Mapped[str] = mapped_column(String(16))
+    container: Mapped[str] = mapped_column(String(256))
+    prefix: Mapped[str] = mapped_column(String(1024), default="")
+    storage_class: Mapped[str] = mapped_column(String(64), default="STANDARD")
+    age_band: Mapped[str] = mapped_column(String(32))
+    object_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    total_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    oldest_last_modified: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=True)
 
 
 class Scope(Base):  # pylint: disable=too-few-public-methods

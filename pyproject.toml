@@ -42,7 +42,7 @@ aws-tag-manager = "aws_tag_manager:main"
 tagmanager-serve = "tagmanager.serve:main"
 
 [tool.setuptools]
-packages = ["tagmanager", "tagmanager.app", "tagmanager.models", "tagmanager.providers", "tagmanager.rules"]
+packages = ["tagmanager", "tagmanager.app", "tagmanager.models", "tagmanager.providers", "tagmanager.rules", "tagmanager.storage"]
 py-modules = ["aws_tag_manager", "aws"]
 
 [tool.setuptools.package-data]
