@@ -100,8 +100,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T09:47:18Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T09:50:33Z"
     },
     "20": {
       "title": "S3 inventory scanner with user-configurable age thresholds",
@@ -109,8 +109,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:26Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T09:50:41Z"
     },
     "21": {
       "title": "Storage pricing maps + stale-data cost report",

@@ -1,0 +1,186 @@
+"""
+Purpose: Storage age-scan CLI — walk buckets, band objects by age against
+user thresholds, persist rollups, and print/write the summary. The walking
+skeleton for the storage lifecycle optimizer.
+Author(s): John Reed
+"""
+
+import argparse
+import csv
+import logging
+import sys
+
+from botocore.exceptions import BotoCoreError, ClientError
+
+from tagmanager.config import get_settings
+from tagmanager.models.base import create_all, get_engine, session_factory
+from tagmanager.storage.rollup import RollupBuilder, band_labels
+from tagmanager.storage.s3_provider import S3StorageProvider
+from tagmanager.storage.store import persist_rollups
+
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+LOG = logging.getLogger("root.storage_cli")
+LOG.setLevel(logging.INFO)
+
+
+# Helpers
+
+def _fmt_bytes(num):
+    """
+    Human-readable byte count.
+
+    :param num: byte count
+    :returns: string like "1.5 GiB"
+    """
+    size = float(num)
+    for unit in ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]:
+        if size < 1024 or unit == "PiB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{size:.1f} PiB"
+
+
+def parse_args(argv):
+    """
+    Build and run the argument parser.
+
+    :param argv: argument list (None = sys.argv)
+    :returns: parsed namespace
+    """
+    parser = argparse.ArgumentParser(
+        prog="tagmanager-storage-scan",
+        description="Scan mass storage, band objects by age, report rollups.")
+    parser.add_argument("--bucket", action="append", required=True,
+                        help="bucket to scan (repeatable)")
+    parser.add_argument("--prefix", default="",
+                        help="only scan keys under this prefix")
+    parser.add_argument("--age-bands", default="",
+                        help="comma-separated day thresholds, e.g. 90,365")
+    parser.add_argument("--prefix-depth", type=int, default=None,
+                        help="path segments to roll prefixes up to")
+    parser.add_argument("--csv-out", default="",
+                        help="write the rollup summary to this CSV path")
+    return parser.parse_args(argv)
+
+
+def scan_buckets(provider, buckets, prefix, builder):
+    """
+    Stream every bucket through the rollup builder, isolating failures.
+
+    :param provider: StorageProvider
+    :param buckets: list of bucket names
+    :param prefix: key prefix scope
+    :param builder: RollupBuilder
+    :returns: list of skip records for buckets that failed
+    """
+    skips = []
+    for bucket in buckets:
+        try:
+            for obj in provider.list_objects(bucket, prefix=prefix):
+                builder.add(obj)
+            LOG.info("%s complete...", bucket)
+        except (ClientError, BotoCoreError) as err:
+            LOG.warning("skipping %s: %s", bucket, err)
+            skips.append({"container": bucket, "error": str(err)})
+    return skips
+
+
+def write_csv(path, builder):
+    """
+    Write every rollup cell to a CSV file.
+
+    :param path: output file path
+    :param builder: RollupBuilder after the scan
+    """
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["container", "prefix", "storage_class", "age_band",
+                         "object_count", "total_bytes", "oldest_last_modified"])
+        for (container, prefix, sclass, band), stat in sorted(builder.rollups().items()):
+            writer.writerow([container, prefix, sclass, band,
+                             stat.object_count, stat.total_bytes,
+                             stat.oldest_last_modified.isoformat()
+                             if stat.oldest_last_modified else ""])
+
+
+def print_summary(builder):
+    """
+    Print the age-band summary table and notable objects.
+
+    :param builder: RollupBuilder after the scan
+    """
+    print("***********************************")
+    print("*  storage age scan — summary     *")
+    print("***********************************")
+    print(f"objects: {builder.objects_seen}   "
+          f"total: {_fmt_bytes(builder.bytes_seen)}")
+    print("(age = last modified; last-accessed enrichment lands in phase 4)")
+    print()
+
+    totals = builder.band_totals()
+    for band in band_labels(builder.age_band_days):
+        stat = totals.get(band)
+        if not stat:
+            continue
+        print(f"  {band:>10}: {stat.object_count:>10} objects  "
+              f"{_fmt_bytes(stat.total_bytes):>12}")
+
+    oldest = builder.oldest_objects()
+    if oldest:
+        print()
+        print("oldest objects:")
+        for obj in oldest[:5]:
+            when = obj.last_modified.date().isoformat()
+            print(f"  {when}  {_fmt_bytes(obj.size_bytes):>10}  "
+                  f"s3://{obj.container}/{obj.key}")
+
+
+def main(argv=None, provider=None):
+    """
+    Run the scan end-to-end: walk, roll up, persist, report.
+
+    :param argv: CLI args (None = sys.argv)
+    :param provider: StorageProvider override for tests
+    :returns: exit code — 0 OK, 4 config error
+    """
+    args = parse_args(argv)
+    settings = get_settings()
+
+    if args.age_bands:
+        try:
+            age_band_days = sorted(int(part) for part in args.age_bands.split(","))
+        except ValueError:
+            LOG.error("bad --age-bands %r — expected e.g. 90,365", args.age_bands)
+            return 4
+    else:
+        age_band_days = list(settings.age_band_days)
+
+    prefix_depth = (args.prefix_depth if args.prefix_depth is not None
+                    else settings.storage_prefix_depth)
+
+    provider = provider or S3StorageProvider()
+    builder = RollupBuilder(age_band_days=age_band_days,
+                            prefix_depth=prefix_depth)
+
+    print("scanning storage...")
+    skips = scan_buckets(provider, args.bucket, args.prefix, builder)
+
+    engine = get_engine(settings.db_url)
+    create_all(engine)
+    session = session_factory(engine)()
+    run = persist_rollups(session, builder, backend=provider.backend_name,
+                          skips=skips)
+    session.commit()
+    LOG.info("rollups saved (run %s, status %s).", run.id, run.status)
+
+    print_summary(builder)
+
+    if args.csv_out:
+        write_csv(args.csv_out, builder)
+        print(f"csv saved to {args.csv_out}.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

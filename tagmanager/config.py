@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     scan_interval_minutes: int = 60
+    age_band_days: list = [90, 365]
+    storage_prefix_depth: int = 2
 
 
 def get_settings():
