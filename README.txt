@@ -1,6 +1,9 @@
-Purpose: This script is used to gather tag data from AWS EC2 instances
-and compare them against canonical lists to ensure environmental consistency,
-and report any deviations to the appropriate parties.
+AWS TagManager
+------------------------------------------------------------------------------------
+Purpose: Gather tag data from AWS EC2 instances, compare it against canonical
+lists to ensure environmental consistency, report deviations (log + HTML),
+and optionally merge a desired-tags CSV into a reviewed "gold list" and
+publish results to S3.
 ------------------------------------------------------------------------------------
  Author(s): John Reed, Nick Bitzer
 
@@ -45,9 +48,11 @@ Apache publish of index.html remains external.
                                scan; with --write-gold and --csv, also
                                uploads gold-list.json and conflicts.json
 
-The scan runs once — the same instance snapshot feeds both the violation
-report and the gold-list merge. A failed S3 upload logs an error; if the
-scan itself was clean, the run exits 4 so CI notices the missing report.
+The CSV is read and validated before the scan starts, so a bad path or S3
+key fails in seconds instead of after a full region sweep. The scan itself
+runs once — the same instance snapshot feeds both the violation report and
+the gold-list merge. A failed S3 upload logs an error; if the scan itself
+was clean, the run exits 4 so CI notices the missing report.
 
 ## Exit codes
 
@@ -65,5 +70,14 @@ scan itself was clean, the run exits 4 so CI notices the missing report.
 
   pytest
   ./static_analysis.sh
+
+## TODO
+
+  # - decide what an empty tag_value in the CSV means (today it overwrites
+  #   the AWS value with "" and records a conflict — maybe it should clear
+  #   or skip instead)
+  # - conflicts.json path is hardcoded while --gold-output is configurable
+  # - one live end-to-end run with --s3-bucket against a real account
+  #   (S3 paths are currently verified against stubbed clients only)
 
 More to come...

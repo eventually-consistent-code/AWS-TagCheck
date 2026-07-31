@@ -3,7 +3,8 @@
 """
 Purpose: Gather tag data from AWS EC2 instances, compare against canonical
 lists for environmental consistency, and report deviations as logs plus an
-HTML report (index.html).
+HTML report (index.html). Optionally merge a desired-tags CSV (local or S3)
+into a reviewed gold list and upload the report/gold artifacts to S3.
 Author(s): John Reed, Nick Bitzer
 """
 
