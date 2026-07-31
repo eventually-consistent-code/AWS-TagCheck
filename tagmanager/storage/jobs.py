@@ -112,7 +112,8 @@ def _target_options(target):
         account_url=target.account_url,
         buckets=tuple(target.buckets or ()),
         prefix=target.prefix,
-        age_band_days=list(target.age_band_days) or None,
+        age_band_days=list(target.age_band_days or []) or None,
+        prefix_depth=options.get("prefix_depth"),
         rollup_owners=bool(options.get("rollup_owners", False)),
     )
 

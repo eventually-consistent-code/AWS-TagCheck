@@ -158,6 +158,71 @@ def test_failed_job_captures_error(tmp_path, monkeypatch):
     assert "account-url" in job.error
 
 
+def test_flush_seconds_arm_with_injected_clock(tmp_path, monkeypatch):
+    """The time arm flushes (and picks up cancel) without the object arm."""
+    maker = _maker(tmp_path, monkeypatch)
+    target_id = _add_target(maker)
+    scheduler = FakeScheduler(run_inline=False)
+
+    ticks = {"now": 0.0}
+
+    def clock():
+        ticks["now"] += 3.0  # every check advances fake time
+        return ticks["now"]
+
+    job_id = jobs.submit_scan(
+        scheduler, maker, target_id,
+        flush=jobs.FlushPolicy(objects=10_000, seconds=5.0, clock=clock))
+
+    class _CancellingProvider:
+        backend_name = "s3"
+
+        def list_objects(self, container, prefix=""):
+            for i, obj in enumerate(_objects(20)):
+                if i == 2:
+                    assert jobs.request_cancel(maker, job_id)
+                yield obj
+
+        def capabilities(self):
+            raise NotImplementedError
+
+    func, args, kwargs = scheduler.submitted[0]
+    kwargs["provider"] = _CancellingProvider()
+    func(*args, **kwargs)
+
+    session = maker()
+    job = session.get(StorageJob, job_id)
+    assert job.state == "cancelled"
+    assert 0 < job.objects_seen < 20
+
+
+def test_build_scheduler_carries_storage_executor(tmp_path, monkeypatch):
+    """Verifier finding: any build_scheduler caller can run storage jobs —
+    submit against a bare build_scheduler executes, never silent-queues."""
+    from tagmanager.config import Settings  # pylint: disable=import-outside-toplevel
+    from tagmanager.scheduler import build_scheduler  # pylint: disable=import-outside-toplevel
+
+    maker = _maker(tmp_path, monkeypatch)
+    target_id = _add_target(maker)
+    scheduler = build_scheduler(Settings(scan_interval_minutes=9999), maker,
+                                {}, lambda: [])
+    scheduler.start(paused=False)
+    try:
+        job_id = jobs.submit_scan(scheduler, maker, target_id,
+                                  provider=_Provider(_objects(3)))
+        deadline = datetime.datetime.now() + datetime.timedelta(seconds=10)
+        state = "queued"
+        while datetime.datetime.now() < deadline:
+            session = maker()
+            state = session.get(StorageJob, job_id).state
+            session.close()
+            if state not in ("queued", "running"):
+                break
+        assert state == "done"
+    finally:
+        scheduler.shutdown(wait=True)
+
+
 def test_boot_sweep_marks_both_orphan_states(tmp_path, monkeypatch):
     """queued AND running orphans become interrupted at boot."""
     maker = _maker(tmp_path, monkeypatch)

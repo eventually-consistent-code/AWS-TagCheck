@@ -354,6 +354,15 @@
       ],
       "state": "open",
       "updatedAt": "2026-07-31T13:25:03Z"
+    },
+    "46": {
+      "title": "Phase 6 verify: storage executor registered in serve.py not build_scheduler (plan drift) — submit_scan against a bare build_scheduler silently queues forever and index-blocks the target; plus dead target options and untested flush-seconds arm",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:bug"
+      ],
+      "state": "open",
+      "updatedAt": "2026-07-31T14:40:33Z"
     }
   },
   "phases": {

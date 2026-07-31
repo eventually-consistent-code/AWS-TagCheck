@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from tagmanager.models.tables import ScanRun
 from tagmanager.scanner import run_scan
+from tagmanager.storage.jobs import register_storage_executor
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.scheduler")
@@ -43,4 +44,8 @@ def build_scheduler(settings, session_maker, providers, scopes_loader):
     scheduler.add_job(_scan_job, "interval",
                       minutes=settings.scan_interval_minutes,
                       args=[session_maker, providers, scopes_loader])
+    # Storage-job executor lives HERE so every build_scheduler caller gets
+    # it — without it, submit_scan queues jobs that never run and the
+    # active-job index blocks the target until a restart sweep.
+    register_storage_executor(scheduler)
     return scheduler
