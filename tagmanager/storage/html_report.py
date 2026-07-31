@@ -11,6 +11,7 @@ import html
 
 from tagmanager.storage.output import fmt_bytes
 from tagmanager.storage.rollup import band_labels
+from tagmanager.storage.structure import OUT_OF_SCOPE_NOTES
 
 
 def _esc(value):
@@ -84,15 +85,19 @@ def _structure_section(recs_json):
     rows = []
     for rec in recs_json:
         if rec.get("kind") == "truncated":
-            rows.append(("...", "", rec.get("note", ""), ""))
+            rows.append(("...", "", rec.get("note", ""), "", ""))
             continue
         loc = (f"{rec['container']}/{rec['prefix']}" if rec.get("prefix")
                else rec.get("container", ""))
         stake = rec.get("monthly_cost_at_stake") or 0
         rows.append((rec.get("kind", ""), loc,
                      rec.get("rationale", ""),
-                     f"${stake:,.2f}/mo" if stake else "—"))
-    return _table(["kind", "location", "rationale", "at stake"], rows)
+                     f"${stake:,.2f}/mo" if stake else "—",
+                     ", ".join(rec.get("top_owners", []))))
+    notes = "".join(f"<li>{_esc(note)}</li>" for note in OUT_OF_SCOPE_NOTES)
+    return (_table(["kind", "location", "rationale", "at stake",
+                    "top owners"], rows)
+            + f"<ul>{notes}</ul>")
 
 
 def _artifacts_section(artifacts):

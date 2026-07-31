@@ -47,12 +47,14 @@ class _PrefixSignals:  # pylint: disable=too-many-instance-attributes
     total_bytes: int = 0
     cold_bytes: int = 0
     fresh_bytes: int = 0
+    fresh_count: int = 0
     object_count: int = 0
     cold_object_count: int = 0
     small_object_count: int = 0
     classes: set = field(default_factory=set)
     band_bytes: dict = field(default_factory=dict)
     owner_bytes: dict = field(default_factory=dict)
+    fresh_band_label: str = ""
 
 
 def _collect_signals(stats, fresh_label):
@@ -67,6 +69,7 @@ def _collect_signals(stats, fresh_label):
     for stat in stats:
         sig = signals.setdefault((stat.container, stat.prefix),
                                  _PrefixSignals())
+        sig.fresh_band_label = fresh_label
         sig.total_bytes += stat.total_bytes
         sig.object_count += stat.object_count
         sig.classes.add(stat.storage_class)
@@ -78,6 +81,7 @@ def _collect_signals(stats, fresh_label):
                 sig.owner_bytes.get(owner, 0) + stat.total_bytes)
         if stat.age_band == fresh_label:
             sig.fresh_bytes += stat.total_bytes
+            sig.fresh_count += stat.object_count
         else:
             sig.cold_bytes += stat.total_bytes
             sig.cold_object_count += stat.object_count
@@ -122,28 +126,39 @@ def _recommend_for_prefix(sig, access_aware):
                 "transition floors and per-object overhead make tiering "
                 "tiny objects cost money")
 
-    if cold_share > COLD_SHARE_THRESHOLD and sig.fresh_bytes > 0:
+    fresh_present = sig.fresh_bytes > 0 or sig.fresh_count > 0
+    if cold_share > COLD_SHARE_THRESHOLD and fresh_present:
         return ("date-split",
                 f"{cold_share:.0%} of bytes are cold but fresh "
                 f"{activity_word} continue — split into date partitions "
                 "(prefix/year/month/) so a prefix-scoped lifecycle rule can "
                 "age out old partitions without touching the hot tail")
 
-    if cold_share >= 1.0:
+    if cold_share >= 1.0 and not fresh_present:
         return ("straight-lifecycle",
                 "prefix is entirely cold with no fresh "
                 f"{activity_word} — no reorg needed, apply a lifecycle "
                 "rule directly (--emit-lifecycle)")
 
-    significant_bands = [band for band, size in sig.band_bytes.items()
-                         if sig.total_bytes
-                         and size / sig.total_bytes >= MIXED_BAND_MIN_SHARE]
-    if len(sig.classes) > 1 or len(significant_bands) >= 3:
+    # Strongly bimodal: meaningful bytes at BOTH temperature extremes —
+    # the fresh band and the coldest band each past the share bar.
+    fresh_share = sig.fresh_bytes / sig.total_bytes
+    coldest_share = (max((size / sig.total_bytes
+                          for band, size in sig.band_bytes.items()
+                          if band != sig.fresh_band_label), default=0)
+                     if sig.total_bytes else 0)
+    bimodal = (fresh_share >= MIXED_BAND_MIN_SHARE
+               and coldest_share >= MIXED_BAND_MIN_SHARE)
+    if len(sig.classes) > 1 or bimodal:
+        reason = (f"classes: {', '.join(sorted(sig.classes))}"
+                  if len(sig.classes) > 1 else
+                  f"{fresh_share:.0%} fresh alongside {coldest_share:.0%} "
+                  "cold")
         return ("zone-split",
-                "prefix mixes storage classes/ages at one level "
-                f"(classes: {', '.join(sorted(sig.classes))}) — split into "
-                "hot/cold zones so each zone carries exactly one lifecycle "
-                "rule; rules are prefix-scoped and cannot treat a mix")
+                f"prefix mixes ages/classes at one level ({reason}) — "
+                "split into hot/cold zones so each zone carries exactly "
+                "one lifecycle rule; rules are prefix-scoped and cannot "
+                "treat a mix")
 
     return None
 

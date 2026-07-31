@@ -6,6 +6,7 @@ Nothing here calls AWS; files are proposals a human applies.
 Author(s): John Reed
 """
 
+import csv
 import datetime
 import json
 import pathlib
@@ -174,11 +175,13 @@ class MoveManifestEmitter:
             return
         if obj.container not in self._handles:
             path = self.out_dir / f"{obj.container}.move-plan.csv"
-            # Streaming writer — closed in close().
+            # Streaming writer — closed in close(). csv.writer quotes
+            # commas/newlines in keys, which are legal in object stores.
             # pylint: disable-next=consider-using-with
-            self._handles[obj.container] = open(path, "w", encoding="utf-8")
-            self._handles[obj.container].write("old_key,new_key\n")
-        self._handles[obj.container].write(f"{obj.key},{new_key}\n")
+            handle = open(path, "w", newline="", encoding="utf-8")
+            self._handles[obj.container] = (handle, csv.writer(handle))
+            self._handles[obj.container][1].writerow(["old_key", "new_key"])
+        self._handles[obj.container][1].writerow([obj.key, new_key])
         self._counts[obj.container] = self._counts.get(obj.container, 0) + 1
 
     def close(self):
@@ -186,12 +189,13 @@ class MoveManifestEmitter:
         Close files and report what was planned.
 
         :returns: dict of bucket -> {"moves": n} plus "_skipped_conforming"
+            (present whenever anything matched, even all-conforming runs)
         """
-        for handle in self._handles.values():
+        for handle, _ in self._handles.values():
             handle.close()
         summary = {container: {"moves": count}
                    for container, count in self._counts.items()}
-        if summary:
+        if summary or self._skipped_conforming:
             summary["_skipped_conforming"] = self._skipped_conforming
         return summary
 

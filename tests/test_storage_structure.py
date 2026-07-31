@@ -67,6 +67,41 @@ def test_zone_split_for_class_mix():
     assert _kinds(stats) == {("bkt", "logs"): "zone-split"}
 
 
+def test_zone_split_for_bimodal_ages_single_class():
+    """Verifier finding: 50/50 fresh-vs-very-cold, one class -> zone-split."""
+    stats = [_stat(band=">365d", total_bytes=50 * BYTES_PER_GB),
+             _stat(band="<90d", total_bytes=50 * BYTES_PER_GB)]
+    assert _kinds(stats) == {("bkt", "logs"): "zone-split"}
+
+
+def test_zero_byte_fresh_markers_count_as_activity():
+    """Verifier nit: 0-byte fresh markers still mean fresh activity."""
+    stats = [_stat(band=">365d", total_bytes=100 * BYTES_PER_GB),
+             _stat(band="<90d", total_bytes=0, count=5)]
+    kinds = _kinds(stats)
+    assert kinds[("bkt", "logs")] == "date-split"
+
+
+def test_move_plan_csv_quotes_comma_keys(tmp_path):
+    """Verifier finding: comma-bearing keys survive as parseable CSV."""
+    recs = [{"kind": "date-split", "container": "bkt", "prefix": "logs"}]
+    emitter = MoveManifestEmitter(tmp_path, recs, stale_after_days=90,
+                                  now=NOW)
+    emitter.offer(StorageObject(
+        backend="s3", container="bkt", key="logs/comma,name.log",
+        size_bytes=10,
+        last_modified=datetime.datetime(2025, 3, 1,
+                                        tzinfo=datetime.timezone.utc)))
+    emitter.close()
+
+    with open(tmp_path / "bkt.move-plan.csv", newline="",
+              encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    assert rows[0] == ["old_key", "new_key"]
+    assert rows[1] == ["logs/comma,name.log",
+                       "logs/2025/03/comma,name.log"]
+
+
 def test_fresh_only_prefix_gets_nothing():
     """All-fresh prefixes produce no recommendation."""
     assert not _kinds([_stat(band="<90d")])

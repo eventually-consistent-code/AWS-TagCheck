@@ -330,6 +330,10 @@ def _run_structure(session, run, args):
 
     run.structure_recs = recs_to_json(recs)
     session.commit()
+    if len(run.structure_recs) and run.structure_recs[-1].get(
+            "kind") == "truncated":
+        print(f"  (persisted top {len(run.structure_recs) - 1} by $ at "
+              "stake — remainder in --structure-csv only)")
 
     if args.structure_csv:
         with open(args.structure_csv, "w", newline="",
@@ -515,6 +519,10 @@ def _report_move_plan(emitter):
         print("no objects matched the recommendations — no move plans.")
         return None
     skipped = summary.pop("_skipped_conforming", 0)
+    if not summary:
+        print(f"all {skipped} matched object(s) already conform to the "
+              "target layout — nothing to move.")
+        return None
     lines = [
         "# Move plans — how to apply", "",
         "old_key,new_key CSVs from the latest recommendations. Moves are "
