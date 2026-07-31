@@ -7,7 +7,9 @@ Author(s): John Reed
 
 import argparse
 import csv
+import json
 import logging
+import pathlib
 import sys
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -15,6 +17,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from tagmanager.config import get_settings
 from tagmanager.models.base import create_all, get_engine, session_factory
 from tagmanager.storage.cost import build_cost_report
+from tagmanager.storage.lifecycle_gen import (APPLY_HEADER,
+                                              build_lifecycle_configs)
 from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.projections import project_options
 from tagmanager.storage.rollup import RollupBuilder, band_labels
@@ -76,6 +80,9 @@ def parse_args(argv):
     parser.add_argument("--age-out-map", default="",
                         help="override age-out targets, keyed on threshold "
                              "days: e.g. 90=STANDARD_IA,365=DEEP_ARCHIVE")
+    parser.add_argument("--emit-lifecycle", default="", metavar="DIR",
+                        help="write per-bucket lifecycle config JSON + "
+                             "APPLY.md into DIR (uses the latest saved run)")
     return parser.parse_args(argv)
 
 
@@ -293,6 +300,68 @@ def _run_projections(session, run, args):
     return 0
 
 
+def _emit_lifecycle(session, run, args):
+    """
+    Generate per-bucket lifecycle configs into a directory, with APPLY.md.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun to generate from
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK, 4 nothing generated / bad input
+    """
+    out_dir = pathlib.Path(args.emit_lifecycle)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        band_targets = _parse_age_out_map(args.age_out_map)
+        delete_after = getattr(args, "delete_after", None)
+        configs, skips = build_lifecycle_configs(
+            stats_for_run(session, run.id), run.age_band_days,
+            band_targets=band_targets, delete_after=delete_after)
+    except ValueError as err:
+        LOG.error("%s", err)
+        return 4
+
+    if not configs:
+        LOG.error("no lifecycle rules to generate — nothing stale and "
+                  "transition-eligible in the latest run")
+        return 4
+
+    print("generating lifecycle configs...")
+    apply_lines = ["# Lifecycle configs — how to apply", "", APPLY_HEADER, ""]
+    for bucket, config in sorted(configs.items()):
+        path = out_dir / f"{bucket}.lifecycle.json"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2)
+            handle.write("\n")
+        print(f"  {path.name}: {len(config['Rules'])} rule(s)")
+        apply_lines.extend([
+            f"## {bucket}",
+            "",
+            "```bash",
+            "aws s3api put-bucket-lifecycle-configuration \\",
+            f"  --bucket {bucket} \\",
+            f"  --lifecycle-configuration file://{path.name}",
+            "```",
+            "",
+            "Blast radius: REPLACES every existing lifecycle rule on "
+            f"`{bucket}`. Objects matching the filters transition on the "
+            "configured day schedule from object creation.",
+            "",
+        ])
+    if skips:
+        apply_lines.append("## Skipped (no rule generated)")
+        apply_lines.append("")
+        for skip in skips:
+            apply_lines.append(f"- {skip}")
+            print(f"  skipped: {skip}")
+        apply_lines.append("")
+
+    with open(out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
+        handle.write("\n".join(apply_lines))
+    print(f"lifecycle configs saved to {out_dir}/.")
+    return 0
+
+
 def _open_session(settings):
     """
     Engine + schema guard + session, or None on a stale dev DB.
@@ -342,11 +411,44 @@ def _analyze_latest(settings, args):
     if run is None:
         LOG.error("no saved storage scan runs — scan first with --bucket")
         return 4
+    return _post_scan_outputs(session, run, args)
+
+
+def _post_scan_outputs(session, run, args):
+    """
+    Optional analysis/artifact outputs after a scan (or on the latest run).
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun
+    :param args: parsed CLI namespace
+    :returns: exit code
+    """
     if args.cost_report:
         _run_cost_report(session, run, args)
     if args.project_savings:
-        return _run_projections(session, run, args)
+        rc = _run_projections(session, run, args)
+        if rc:
+            return rc
+    if args.emit_lifecycle:
+        return _emit_lifecycle(session, run, args)
     return 0
+
+
+def _resolve_age_bands(args, settings):
+    """
+    Age thresholds from the flag or settings; None on bad input.
+
+    :param args: parsed CLI namespace
+    :param settings: Settings
+    :returns: sorted list of day thresholds, or None
+    """
+    if not args.age_bands:
+        return list(settings.age_band_days)
+    try:
+        return sorted(int(part) for part in args.age_bands.split(","))
+    except ValueError:
+        LOG.error("bad --age-bands %r — expected e.g. 90,365", args.age_bands)
+        return None
 
 
 def main(argv=None, provider=None):
@@ -363,22 +465,19 @@ def main(argv=None, provider=None):
     args = parse_args(argv)
     settings = get_settings()
 
-    if not args.bucket and not (args.cost_report or args.project_savings):
-        LOG.error("nothing to do — pass --bucket to scan, --cost-report "
-                  "and/or --project-savings to analyze the latest saved run")
+    if not args.bucket and not (args.cost_report or args.project_savings
+                                or args.emit_lifecycle):
+        LOG.error("nothing to do — pass --bucket to scan, or --cost-report / "
+                  "--project-savings / --emit-lifecycle to work from the "
+                  "latest saved run")
         return 4
 
     if not args.bucket:
         return _analyze_latest(settings, args)
 
-    if args.age_bands:
-        try:
-            age_band_days = sorted(int(part) for part in args.age_bands.split(","))
-        except ValueError:
-            LOG.error("bad --age-bands %r — expected e.g. 90,365", args.age_bands)
-            return 4
-    else:
-        age_band_days = list(settings.age_band_days)
+    age_band_days = _resolve_age_bands(args, settings)
+    if age_band_days is None:
+        return 4
 
     prefix_depth = (args.prefix_depth if args.prefix_depth is not None
                     else settings.storage_prefix_depth)
@@ -407,12 +506,7 @@ def main(argv=None, provider=None):
         write_csv(args.csv_out, builder)
         print(f"csv saved to {args.csv_out}.")
 
-    if args.cost_report:
-        _run_cost_report(session, run, args)
-    if args.project_savings:
-        return _run_projections(session, run, args)
-
-    return 0
+    return _post_scan_outputs(session, run, args)
 
 
 if __name__ == "__main__":
