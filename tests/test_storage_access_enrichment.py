@@ -66,7 +66,7 @@ def test_read_hot_object_stays_fresh():
 
     assert builder.access_aware
     cells = builder.rollups()
-    assert list(cells) == [("bkt", "", "STANDARD", "<90d")]
+    assert list(cells) == [("bkt", "", "STANDARD", "<90d", "")]
 
 
 def test_no_access_data_unchanged():
@@ -76,7 +76,7 @@ def test_no_access_data_unchanged():
         backend="s3", container="bkt", key="cold.dat", size_bytes=100,
         last_modified=NOW - datetime.timedelta(days=800)))
     assert not builder.access_aware
-    assert list(builder.rollups()) == [("bkt", "", "STANDARD", ">365d")]
+    assert list(builder.rollups()) == [("bkt", "", "STANDARD", ">365d", "")]
 
 
 def test_cli_access_logs_enrichment(tmp_path, monkeypatch, capsys):

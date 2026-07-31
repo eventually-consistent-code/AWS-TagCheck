@@ -11,6 +11,55 @@ from dataclasses import dataclass
 from tagmanager.storage.pricing import BYTES_PER_GB
 
 
+def aggregate_class_bytes(stats, pricing):
+    """
+    Total bytes per priced storage class across a run's rows.
+
+    :param stats: iterable of StoragePrefixStat-shaped rows
+    :param pricing: PricingTable
+    :returns: dict of storage class -> total bytes
+    """
+    agg = {}
+    for stat in stats:
+        if pricing.known_class(stat.storage_class):
+            agg[stat.storage_class] = (
+                agg.get(stat.storage_class, 0) + stat.total_bytes)
+    return agg
+
+
+def _merge_owner_slices(stats):
+    """
+    Collapse owner-keyed slices to one row per (container, prefix, class,
+    band) — the cost report is a location view; owner attribution lives
+    in the structure recommendations.
+
+    :param stats: iterable of StoragePrefixStat-shaped rows
+    :returns: list of merged duck-typed rows
+    """
+    merged = {}
+    for stat in stats:
+        key = (stat.container, stat.prefix, stat.storage_class, stat.age_band)
+        row = merged.get(key)
+        if row is None:
+            merged[key] = _MergedStat(stat)
+        else:
+            row.object_count += stat.object_count
+            row.total_bytes += stat.total_bytes
+    return list(merged.values())
+
+
+class _MergedStat:  # pylint: disable=too-few-public-methods
+    """Mutable copy of one stat row for owner-slice merging."""
+
+    def __init__(self, stat):
+        self.container = stat.container
+        self.prefix = stat.prefix
+        self.storage_class = stat.storage_class
+        self.age_band = stat.age_band
+        self.object_count = stat.object_count
+        self.total_bytes = stat.total_bytes
+
+
 @dataclass
 class CostRow:
     """Monthly cost estimate for one rollup cell."""
@@ -44,7 +93,7 @@ def build_cost_report(stats, pricing):
     :param pricing: PricingTable
     :returns: CostReport
     """
-    stats = list(stats)
+    stats = _merge_owner_slices(stats)
 
     # Aggregate bytes per class first — tier ladders apply account-wide.
     class_bytes = {}

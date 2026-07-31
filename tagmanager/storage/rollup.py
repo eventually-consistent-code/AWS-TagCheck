@@ -90,17 +90,21 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
     """
 
     def __init__(self, age_band_days=None, prefix_depth=DEFAULT_PREFIX_DEPTH,
-                 sample_size=DEFAULT_SAMPLE_SIZE, now=None):
+                 sample_size=DEFAULT_SAMPLE_SIZE, now=None,
+                 rollup_owners=False):
         """
         :param age_band_days: ascending day thresholds (default [90, 365])
         :param prefix_depth: path segments to roll prefixes up to
         :param sample_size: how many largest/oldest objects to keep
         :param now: timezone-aware "now" for age math (default: UTC now)
+        :param rollup_owners: key cells by object owner too (cardinality
+            cost — every distinct owner splits a prefix's cells)
         """
         self.age_band_days = list(age_band_days or DEFAULT_AGE_BAND_DAYS)
         self.prefix_depth = prefix_depth
         self.sample_size = sample_size
         self.now = now or datetime.datetime.now(datetime.timezone.utc)
+        self.rollup_owners = rollup_owners
 
         self.objects_seen = 0
         self.bytes_seen = 0
@@ -130,7 +134,10 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
             effective = max(effective, obj.last_accessed)
         band = classify_age(effective, self.now, self.age_band_days)
         prefix = prefix_at_depth(obj.key, self.prefix_depth)
-        cell_key = (obj.container, prefix, obj.storage_class, band)
+        # Key is ALWAYS 5 elements — owner is "" when the dimension is
+        # off, so every unpacker sees one stable shape.
+        owner = obj.owner if self.rollup_owners else ""
+        cell_key = (obj.container, prefix, obj.storage_class, band, owner)
 
         stat = self._cells.setdefault(cell_key, RollupStat())
         stat.object_count += 1
@@ -194,7 +201,7 @@ class RollupBuilder:  # pylint: disable=too-many-instance-attributes
         :returns: dict of band label -> RollupStat
         """
         totals = {}
-        for (_, _, _, band), stat in self._cells.items():
+        for (_, _, _, band, _), stat in self._cells.items():
             agg = totals.setdefault(band, RollupStat())
             agg.object_count += stat.object_count
             agg.total_bytes += stat.total_bytes

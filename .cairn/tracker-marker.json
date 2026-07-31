@@ -199,8 +199,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:43Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T11:41:59Z"
     },
     "30": {
       "title": "Report integration — age, cost, options, structure sections",

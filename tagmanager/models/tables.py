@@ -94,6 +94,8 @@ class StorageScanRun(Base):  # pylint: disable=too-few-public-methods
     age_band_days: Mapped[list] = mapped_column(JSON, default=list)
     skips: Mapped[list] = mapped_column(JSON, default=list)
     access_aware: Mapped[bool] = mapped_column(Boolean, default=False)
+    artifacts: Mapped[list] = mapped_column(JSON, default=list)
+    structure_recs: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods
@@ -114,6 +116,7 @@ class StoragePrefixStat(Base):  # pylint: disable=too-few-public-methods
         DateTime, nullable=True)
     small_object_count: Mapped[int] = mapped_column(BigInteger, default=0)
     small_object_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    owner: Mapped[str] = mapped_column(String(256), default="")
 
 
 class Scope(Base):  # pylint: disable=too-few-public-methods

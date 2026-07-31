@@ -42,7 +42,8 @@ def persist_rollups(session, builder, backend, skips=None):
     session.add(run)
     session.flush()
 
-    for (container, prefix, storage_class, band), stat in builder.rollups().items():
+    for (container, prefix, storage_class, band,
+         owner), stat in builder.rollups().items():
         session.add(StoragePrefixStat(
             scan_run_id=run.id,
             backend=backend,
@@ -50,6 +51,7 @@ def persist_rollups(session, builder, backend, skips=None):
             prefix=prefix,
             storage_class=storage_class,
             age_band=band,
+            owner=owner,
             object_count=stat.object_count,
             total_bytes=stat.total_bytes,
             oldest_last_modified=stat.oldest_last_modified,
@@ -77,8 +79,10 @@ def schema_current(engine):
                     inspect(engine).get_columns("storage_prefix_stats")}
     run_columns = {col["name"] for col in
                    inspect(engine).get_columns("storage_scan_runs")}
-    return ({"small_object_count", "small_object_bytes"}.issubset(stat_columns)
-            and "access_aware" in run_columns)
+    return ({"small_object_count", "small_object_bytes",
+             "owner"}.issubset(stat_columns)
+            and {"access_aware", "artifacts",
+                 "structure_recs"}.issubset(run_columns))
 
 
 def stats_for_run(session, run_id):
@@ -93,6 +97,23 @@ def stats_for_run(session, run_id):
             .filter(StoragePrefixStat.scan_run_id == run_id)
             .order_by(StoragePrefixStat.container, StoragePrefixStat.prefix)
             .all())
+
+
+def record_artifact(session, run, kind, directory, counts):
+    """
+    Append one emit-artifact record to a run's metadata and commit.
+
+    The report's artifacts index reads this — never the filesystem.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun
+    :param kind: artifact kind string ("lifecycle", "delete-manifests", ...)
+    :param directory: output directory
+    :param counts: small dict of counts for the index line
+    """
+    run.artifacts = list(run.artifacts or []) + [{
+        "kind": kind, "dir": str(directory), "counts": counts}]
+    session.commit()
 
 
 def latest_complete_run(session, backend=None):

@@ -10,6 +10,7 @@ Author(s): John Reed
 
 from dataclasses import dataclass, field
 
+from tagmanager.storage.cost import aggregate_class_bytes
 from tagmanager.storage.pricing import BYTES_PER_GB
 from tagmanager.storage.rollup import band_labels
 
@@ -91,11 +92,7 @@ def _marginal_rates(stats, stale, pricing):
     :param pricing: PricingTable
     :returns: dict of storage class -> marginal $/GB-mo
     """
-    agg = {}
-    for stat in stats:
-        if pricing.known_class(stat.storage_class):
-            agg[stat.storage_class] = (
-                agg.get(stat.storage_class, 0) + stat.total_bytes)
+    agg = aggregate_class_bytes(stats, pricing)
     stale_bytes = {}
     for cell in stale:
         stale_bytes[cell.storage_class] = (

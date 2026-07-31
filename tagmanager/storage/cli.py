@@ -23,7 +23,14 @@ from tagmanager.storage.lifecycle_gen import (APPLY_HEADER,
                                               build_lifecycle_configs)
 from tagmanager.storage.manifests import (DELETE_APPLY_NOTES,
                                           BatchCopyEmitter,
-                                          DeleteManifestEmitter)
+                                          DeleteManifestEmitter,
+                                          MoveManifestEmitter)
+from tagmanager.storage.output import (print_cost_report, print_projections,
+                                       print_summary, write_cost_csv,
+                                       write_csv, write_savings_csv,
+                                       write_structure_proposal)
+from tagmanager.storage.structure import (build_recommendations,
+                                          recs_to_json)
 from tagmanager.storage.tiering_gen import (TIERING_APPLY_NOTE,
                                             build_tiering_configs)
 from tagmanager.storage.pricing import load_pricing
@@ -32,10 +39,11 @@ from tagmanager.storage.access_log import load_access_index
 from tagmanager.storage.azure_provider import AzureBlobStorageProvider
 from tagmanager.storage.fs_provider import FilesystemStorageProvider
 from tagmanager.storage.gcs_provider import GcsStorageProvider
-from tagmanager.storage.rollup import RollupBuilder, band_labels
+from tagmanager.storage.rollup import RollupBuilder
 from tagmanager.storage.s3_provider import S3StorageProvider
 from tagmanager.storage.store import (latest_complete_run, persist_rollups,
-                                      schema_current, stats_for_run)
+                                      record_artifact, schema_current,
+                                      stats_for_run)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.storage_cli")
@@ -43,21 +51,6 @@ LOG.setLevel(logging.INFO)
 
 
 # Helpers
-
-def _fmt_bytes(num):
-    """
-    Human-readable byte count.
-
-    :param num: byte count
-    :returns: string like "1.5 GiB"
-    """
-    size = float(num)
-    for unit in ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]:
-        if size < 1024 or unit == "PiB":
-            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
-        size /= 1024
-    return f"{size:.1f} PiB"
-
 
 def parse_args(argv):
     """
@@ -115,6 +108,22 @@ def parse_args(argv):
     parser.add_argument("--emit-batch-copy", default="", metavar="DIR",
                         help="scan mode only: stream stale objects into "
                              "S3 Batch Operations copy manifests (CSV)")
+    parser.add_argument("--recommend-structure", action="store_true",
+                        help="derive layout recommendations from the run "
+                             "and persist them for move plans/reports")
+    parser.add_argument("--structure-csv", default="",
+                        help="write the recommendations to this CSV path")
+    parser.add_argument("--emit-structure", default="", metavar="DIR",
+                        help="write PROPOSAL.md with suggested layouts + "
+                             "apply guidance into DIR")
+    parser.add_argument("--emit-move-plan", default="", metavar="DIR",
+                        help="scan mode only: old-key,new-key move plans "
+                             "from the LATEST run's recommendations "
+                             "(two-pass: --recommend-structure first)")
+    parser.add_argument("--rollup-owners", action="store_true",
+                        help="key rollup cells by object owner too (every "
+                             "distinct owner splits a prefix's cells — "
+                             "cardinality cost; azure/gcs record no owner)")
     parser.add_argument("--access-logs", default="", metavar="GLOB",
                         help="scan mode only: local S3 server-access-log "
                              "files to fold into a last-read index "
@@ -159,156 +168,6 @@ def scan_buckets(provider, buckets, prefix, builder, extras=None):
             LOG.warning("skipping %s: %s", bucket, err)
             skips.append({"container": bucket, "error": str(err)})
     return skips
-
-
-def write_csv(path, builder):
-    """
-    Write every rollup cell to a CSV file.
-
-    :param path: output file path
-    :param builder: RollupBuilder after the scan
-    """
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["container", "prefix", "storage_class", "age_band",
-                         "object_count", "total_bytes", "oldest_last_modified",
-                         "small_object_count", "small_object_bytes"])
-        for (container, prefix, sclass, band), stat in sorted(builder.rollups().items()):
-            writer.writerow([container, prefix, sclass, band,
-                             stat.object_count, stat.total_bytes,
-                             stat.oldest_last_modified.isoformat()
-                             if stat.oldest_last_modified else "",
-                             stat.small_object_count, stat.small_object_bytes])
-
-
-def print_summary(builder):
-    """
-    Print the age-band summary table and notable objects.
-
-    :param builder: RollupBuilder after the scan
-    """
-    print("***********************************")
-    print("*  storage age scan — summary     *")
-    print("***********************************")
-    print(f"objects: {builder.objects_seen}   "
-          f"total: {_fmt_bytes(builder.bytes_seen)}")
-    if builder.access_aware:
-        print("(age = access-aware — newest of modified/read; access times "
-              "are lower bounds)")
-    else:
-        print("(age = last modified only — no access telemetry seen)")
-    print()
-
-    totals = builder.band_totals()
-    for band in band_labels(builder.age_band_days):
-        stat = totals.get(band)
-        if not stat:
-            continue
-        print(f"  {band:>10}: {stat.object_count:>10} objects  "
-              f"{_fmt_bytes(stat.total_bytes):>12}")
-
-    oldest = builder.oldest_objects()
-    if oldest:
-        print()
-        print("oldest objects:")
-        schemes = {"s3": "s3://", "azure": "azure://", "gcs": "gs://"}
-        for obj in oldest[:5]:
-            when = obj.last_modified.date().isoformat()
-            scheme = schemes.get(obj.backend, "")
-            sep = "" if obj.container.endswith("/") else "/"
-            print(f"  {when}  {_fmt_bytes(obj.size_bytes):>10}  "
-                  f"{scheme}{obj.container}{sep}{obj.key}")
-
-
-def print_cost_report(report):
-    """
-    Print the cost report: top cells, band totals, grand total.
-
-    :param report: CostReport
-    """
-    print("***********************************")
-    print("*  storage cost report            *")
-    print("***********************************")
-    print(f"(estimate — list pricing, {report.region}, "
-          f"snapshot {report.as_of_date})")
-    print()
-
-    for row in report.rows[:15]:
-        loc = f"{row.container}/{row.prefix}" if row.prefix else row.container
-        print(f"  ${row.monthly_cost:>10.2f}/mo  {row.age_band:>10}  "
-              f"{row.storage_class:<14} {loc}")
-    if len(report.rows) > 15:
-        print(f"  ... {len(report.rows) - 15} more cells in --cost-csv")
-
-    print()
-    for band, cost in sorted(report.band_totals.items()):
-        print(f"  {band:>10}: ${cost:,.2f}/mo")
-    print(f"  total: ${report.total_monthly_cost:,.2f}/mo")
-
-    if report.unknown_classes:
-        print(f"  (unpriced storage classes skipped: "
-              f"{', '.join(report.unknown_classes)})")
-
-
-def write_cost_csv(path, report):
-    """
-    Write every cost row to a CSV file.
-
-    :param path: output file path
-    :param report: CostReport
-    """
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["container", "prefix", "storage_class", "age_band",
-                         "object_count", "total_bytes", "monthly_cost_usd"])
-        for row in report.rows:
-            writer.writerow([row.container, row.prefix, row.storage_class,
-                             row.age_band, row.object_count, row.total_bytes,
-                             f"{row.monthly_cost:.6f}"])
-
-
-def print_projections(projections):
-    """
-    Print the per-option savings table.
-
-    :param projections: list of OptionProjection
-    """
-    print("***********************************")
-    print("*  savings projections            *")
-    print("***********************************")
-    print("(stale slice only — estimate, list pricing)")
-    print()
-    for proj in projections:
-        flag = "  NOT RECOMMENDED" if proj.not_recommended else ""
-        breakeven = (f"break-even {proj.break_even_months:.1f}mo"
-                     if proj.break_even_months is not None else "no break-even")
-        print(f"  {proj.option:<20} ${proj.monthly_savings:>10.2f}/mo  "
-              f"${proj.annual_savings:>11.2f}/yr  "
-              f"one-time ${proj.one_time_cost:.2f}  {breakeven}{flag}")
-        for caveat in proj.caveats:
-            print(f"      - {caveat}")
-    print()
-
-
-def write_savings_csv(path, projections):
-    """
-    Write the projections to CSV.
-
-    :param path: output file path
-    :param projections: list of OptionProjection
-    """
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["option", "monthly_savings_usd", "annual_savings_usd",
-                         "one_time_cost_usd", "break_even_months",
-                         "not_recommended", "caveats"])
-        for proj in projections:
-            writer.writerow([
-                proj.option, f"{proj.monthly_savings:.6f}",
-                f"{proj.annual_savings:.6f}", f"{proj.one_time_cost:.6f}",
-                "" if proj.break_even_months is None
-                else f"{proj.break_even_months:.2f}",
-                proj.not_recommended, "; ".join(proj.caveats)])
 
 
 def _parse_age_out_map(raw):
@@ -423,6 +282,69 @@ def _emit_lifecycle(session, run, args):
     with open(out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
         handle.write("\n".join(apply_lines))
     print(f"lifecycle configs saved to {out_dir}/.")
+    record_artifact(session, run, "lifecycle", out_dir,
+                    {"buckets": len(configs),
+                     "rules": sum(len(c["Rules"]) for c in configs.values())})
+    return 0
+
+
+def _run_structure(session, run, args):
+    """
+    Build, print, persist, and optionally emit structure recommendations.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun to analyze
+    :param args: parsed CLI namespace
+    :returns: exit code — 0 OK
+    """
+    pricing = None
+    try:
+        pricing = load_pricing(provider=run.backend)
+    except FileNotFoundError:
+        pass  # $-at-stake attribution simply absent (fs backend)
+
+    recs, notes = build_recommendations(
+        stats_for_run(session, run.id), run.age_band_days,
+        pricing=pricing, access_aware=run.access_aware)
+
+    print("***********************************")
+    print("*  structure recommendations      *")
+    print("***********************************")
+    if not recs:
+        print("no reorg recommended — the layout already fits "
+              "prefix-scoped lifecycle rules.")
+    for rec in recs:
+        loc = f"{rec.container}/{rec.prefix}" if rec.prefix else rec.container
+        stake = (f"  (${rec.monthly_cost_at_stake:.2f}/mo at stake)"
+                 if rec.monthly_cost_at_stake else "")
+        print(f"  {rec.kind:<18} {loc}{stake}")
+        print(f"      {rec.rationale}")
+        if rec.top_owners:
+            print(f"      top owners: {', '.join(rec.top_owners)}")
+    for note in notes:
+        print(f"  - {note}")
+
+    run.structure_recs = recs_to_json(recs)
+    session.commit()
+
+    if args.structure_csv:
+        with open(args.structure_csv, "w", newline="",
+                  encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["kind", "container", "prefix", "rationale",
+                             "monthly_cost_at_stake", "top_owners"])
+            for rec in recs:
+                writer.writerow([rec.kind, rec.container, rec.prefix,
+                                 rec.rationale,
+                                 f"{rec.monthly_cost_at_stake:.6f}",
+                                 "; ".join(rec.top_owners)])
+        print(f"structure csv saved to {args.structure_csv}.")
+
+    if args.emit_structure:
+        out_dir = write_structure_proposal(args.emit_structure, recs,
+                                           notes, run)
+        record_artifact(session, run, "structure-proposal", out_dir,
+                        {"recommendations": len(recs)})
     return 0
 
 
@@ -521,6 +443,8 @@ def _emit_tiering(session, run, args):
     with open(out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
         handle.write("\n".join(apply_lines))
     print(f"tiering configs saved to {out_dir}/.")
+    record_artifact(session, run, "tiering", out_dir,
+                    {"configs": sum(len(c) for c in configs.values())})
     return 0
 
 
@@ -534,7 +458,7 @@ def _report_batch_copy(emitter, age_band_days):
     summary = emitter.close()
     if not summary:
         print("no objects past the last age band — no batch-copy manifests.")
-        return
+        return None
     target = "DEEP_ARCHIVE" if age_band_days[-1] >= 365 else "GLACIER"
     lines = [
         "# Batch Operations copy manifests — how to apply", "",
@@ -572,6 +496,45 @@ def _report_batch_copy(emitter, age_band_days):
     with open(emitter.out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
     print(f"batch-copy manifests saved to {emitter.out_dir}/.")
+    return summary
+
+
+def _report_move_plan(emitter):
+    """
+    Close a move-plan emitter, write APPLY.md, print the summary.
+
+    :param emitter: MoveManifestEmitter
+    :returns: summary dict or None
+    """
+    summary = emitter.close()
+    if not summary:
+        print("no objects matched the recommendations — no move plans.")
+        return None
+    skipped = summary.pop("_skipped_conforming", 0)
+    lines = [
+        "# Move plans — how to apply", "",
+        "old_key,new_key CSVs from the latest recommendations. Moves are "
+        "COPY + DELETE (object storage has no rename) — copy first, verify, "
+        "then delete. Plans are point-in-time; objects written since the "
+        "scan are not covered. If a target prefix already exists, review "
+        "for collisions before copying.", "",
+        "```bash",
+        "# per line: aws s3 cp s3://<bucket>/<old_key> "
+        "s3://<bucket>/<new_key> && aws s3 rm s3://<bucket>/<old_key>",
+        "```", "",
+    ]
+    for bucket, info in sorted(summary.items()):
+        print(f"  {bucket}: {info['moves']} move(s) planned")
+        lines.append(f"- `{bucket}`: {info['moves']} moves")
+    if skipped:
+        note = f"{skipped} object(s) already match the target layout — skipped"
+        print(f"  {note}")
+        lines.append(f"- {note}")
+    with open(emitter.out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    print(f"move plans saved to {emitter.out_dir}/.")
+    summary["_skipped_conforming"] = skipped
+    return summary
 
 
 def _report_delete_manifests(emitter):
@@ -583,7 +546,7 @@ def _report_delete_manifests(emitter):
     summary = emitter.close()
     if not summary:
         print("no objects past the last age band — no delete manifests.")
-        return
+        return None
     lines = ["# Delete manifests — how to apply", ""]
     lines.extend(DELETE_APPLY_NOTES)
     lines.append("")
@@ -595,6 +558,40 @@ def _report_delete_manifests(emitter):
     with open(emitter.out_dir / "APPLY.md", "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
     print(f"delete manifests saved to {emitter.out_dir}/.")
+    return summary
+
+
+def _build_emitters(args, session, age_band_days):
+    """
+    Construct the scan's streaming emitters, or None on a config error.
+
+    :param args: parsed CLI namespace
+    :param session: SQLAlchemy session (move-plan rec lookup)
+    :param age_band_days: resolved thresholds
+    :returns: list of emitters, or None
+    """
+    emitters = []
+    if args.emit_delete_manifests:
+        emitters.append(DeleteManifestEmitter(
+            args.emit_delete_manifests, stale_after_days=age_band_days[-1]))
+    if args.emit_batch_copy:
+        emitters.append(BatchCopyEmitter(
+            args.emit_batch_copy, stale_after_days=age_band_days[-1]))
+    if args.emit_move_plan:
+        # Recs load NOW, from the latest COMPLETE run — the run this scan
+        # creates is still "running" and carries none yet (two-pass flow).
+        prior = latest_complete_run(session, backend=args.backend)
+        prior_recs = list(prior.structure_recs or []) if prior else []
+        if not any(rec.get("kind") in MoveManifestEmitter.MOVABLE_KINDS
+                   for rec in prior_recs):
+            LOG.error("no movable structure recommendations on the latest "
+                      "%s run — run --recommend-structure first, then "
+                      "rescan with --emit-move-plan", args.backend)
+            return None
+        emitters.append(MoveManifestEmitter(
+            args.emit_move_plan, prior_recs,
+            stale_after_days=age_band_days[0]))
+    return emitters
 
 
 def _post_scan_outputs(session, run, args):
@@ -615,6 +612,8 @@ def _post_scan_outputs(session, run, args):
         steps.append(_emit_lifecycle)
     if args.emit_tiering:
         steps.append(_emit_tiering)
+    if args.recommend_structure:
+        steps.append(_run_structure)
     for step in steps:
         rc = step(session, run, args)
         if rc:
@@ -691,13 +690,15 @@ def main(argv=None, provider=None):
     settings = get_settings()
 
     if not args.bucket and not (args.cost_report or args.project_savings
-                                or args.emit_lifecycle or args.emit_tiering):
+                                or args.emit_lifecycle or args.emit_tiering
+                                or args.recommend_structure):
         LOG.error("nothing to do — pass --bucket to scan, or --cost-report / "
-                  "--project-savings / --emit-lifecycle / --emit-tiering "
-                  "to work from the latest saved run")
+                  "--project-savings / --emit-lifecycle / --emit-tiering / "
+                  "--recommend-structure to work from the latest saved run")
         return 4
 
-    if (args.emit_delete_manifests or args.emit_batch_copy) and not args.bucket:
+    if (args.emit_delete_manifests or args.emit_batch_copy
+            or args.emit_move_plan) and not args.bucket:
         LOG.error("key-level manifests need a scan — rollups keep no object "
                   "keys; pass --bucket")
         return 4
@@ -705,6 +706,52 @@ def main(argv=None, provider=None):
     if not args.bucket:
         return _analyze_latest(settings, args)
     return _scan(settings, args, provider)
+
+
+def _load_access_index_arg(args):
+    """
+    Resolve --access-logs into an enrichment index.
+
+    :param args: parsed CLI namespace
+    :returns: (index or None, ok bool)
+    """
+    if not args.access_logs:
+        return None, True
+    log_files = sorted(globlib.glob(args.access_logs))
+    if not log_files:
+        LOG.error("--access-logs matched no files: %r", args.access_logs)
+        return None, False
+    print("loading access logs...")
+    access_index, used = load_access_index(log_files)
+    print(f"access index ready: {used} read event(s), "
+          f"{len(access_index)} key(s). ages become access-aware "
+          "lower bounds (log delivery is best-effort, hours of lag).")
+    return access_index, True
+
+
+def _finish_emitters(session, run, emitters, age_band_days):
+    """
+    Close every emitter, write its APPLY.md, record its artifact entry.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun just persisted
+    :param emitters: streaming emitters from the scan
+    :param age_band_days: resolved thresholds
+    """
+    for emitter in emitters:
+        if isinstance(emitter, DeleteManifestEmitter):
+            summary = _report_delete_manifests(emitter)
+            kind = "delete-manifests"
+        elif isinstance(emitter, MoveManifestEmitter):
+            summary = _report_move_plan(emitter)
+            kind = "move-plan"
+        else:
+            summary = _report_batch_copy(emitter, age_band_days)
+            kind = "batch-copy"
+        if summary:
+            record_artifact(session, run, kind, emitter.out_dir,
+                            {b: dict(info) if isinstance(info, dict) else info
+                             for b, info in summary.items()})
 
 
 def _scan(settings, args, provider):
@@ -728,7 +775,8 @@ def _scan(settings, args, provider):
         if provider is None:
             return 4
     builder = RollupBuilder(age_band_days=age_band_days,
-                            prefix_depth=prefix_depth)
+                            prefix_depth=prefix_depth,
+                            rollup_owners=args.rollup_owners)
 
     # Guard the schema BEFORE the walk — a stale dev DB should fail in
     # milliseconds, not after a full bucket scan.
@@ -736,25 +784,13 @@ def _scan(settings, args, provider):
     if session is None:
         return 4
 
-    emitters = []
-    if args.emit_delete_manifests:
-        emitters.append(DeleteManifestEmitter(
-            args.emit_delete_manifests, stale_after_days=age_band_days[-1]))
-    if args.emit_batch_copy:
-        emitters.append(BatchCopyEmitter(
-            args.emit_batch_copy, stale_after_days=age_band_days[-1]))
+    emitters = _build_emitters(args, session, age_band_days)
+    if emitters is None:
+        return 4
 
-    access_index = None
-    if args.access_logs:
-        log_files = sorted(globlib.glob(args.access_logs))
-        if not log_files:
-            LOG.error("--access-logs matched no files: %r", args.access_logs)
-            return 4
-        print("loading access logs...")
-        access_index, used = load_access_index(log_files)
-        print(f"access index ready: {used} read event(s), "
-              f"{len(access_index)} key(s). ages become access-aware "
-              "lower bounds (log delivery is best-effort, hours of lag).")
+    access_index, index_ok = _load_access_index_arg(args)
+    if not index_ok:
+        return 4
 
     print("scanning storage...")
     skips = scan_buckets(provider, args.bucket, args.prefix, builder,
@@ -772,11 +808,7 @@ def _scan(settings, args, provider):
         write_csv(args.csv_out, builder)
         print(f"csv saved to {args.csv_out}.")
 
-    for emitter in emitters:
-        if isinstance(emitter, DeleteManifestEmitter):
-            _report_delete_manifests(emitter)
-        else:
-            _report_batch_copy(emitter, age_band_days)
+    _finish_emitters(session, run, emitters, age_band_days)
 
     return _post_scan_outputs(session, run, args)
 

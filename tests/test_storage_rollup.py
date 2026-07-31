@@ -64,11 +64,11 @@ def test_builder_aggregates_cells():
     builder.add(_obj("logs/2019/c.log", days_old=400, size=30, storage_class="GLACIER"))
 
     cells = builder.rollups()
-    fresh = cells[("bkt", "logs/2024", "STANDARD", "<90d")]
+    fresh = cells[("bkt", "logs/2024", "STANDARD", "<90d", "")]
     assert fresh.object_count == 2
     assert fresh.total_bytes == 120
 
-    cold = cells[("bkt", "logs/2019", "GLACIER", ">365d")]
+    cold = cells[("bkt", "logs/2019", "GLACIER", ">365d", "")]
     assert cold.object_count == 1
     assert cold.oldest_last_modified == NOW - datetime.timedelta(days=400)
 

@@ -50,7 +50,8 @@ def test_s3_provider_yields_normalized_objects():
     assert objs[1].storage_class == "GLACIER"
     assert all(o.backend == "s3" and o.container == "bkt" for o in objs)
     client.get_paginator.assert_called_once_with("list_objects_v2")
-    paginator.paginate.assert_called_once_with(Bucket="bkt", Prefix="p/")
+    paginator.paginate.assert_called_once_with(Bucket="bkt", Prefix="p/",
+                                               FetchOwner=True)
 
 
 def test_s3_provider_handles_empty_bucket():

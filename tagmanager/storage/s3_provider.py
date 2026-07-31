@@ -44,8 +44,10 @@ class S3StorageProvider(StorageProvider):
         client = self._session.client("s3")
         paginator = client.get_paginator("list_objects_v2")
 
-        for page in paginator.paginate(Bucket=container, Prefix=prefix):
+        for page in paginator.paginate(Bucket=container, Prefix=prefix,
+                                       FetchOwner=True):
             for item in page.get("Contents", []):
+                owner = item.get("Owner", {})
                 yield StorageObject(
                     backend="s3",
                     container=container,
@@ -53,6 +55,7 @@ class S3StorageProvider(StorageProvider):
                     size_bytes=item["Size"],
                     last_modified=item["LastModified"],
                     storage_class=item.get("StorageClass", "STANDARD"),
+                    owner=owner.get("DisplayName") or owner.get("ID", ""),
                 )
 
     def capabilities(self):
