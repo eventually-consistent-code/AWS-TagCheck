@@ -16,14 +16,14 @@ and report any deviations to the appropriate parties.
    SSO, or instance role). Do not put secrets in the repo.
 
 3. Set the expected account id (required):
-     export AWS_TAGCHECK_EXPECTED_ACCOUNT=123456789012
+     export AWS_TAGMANAGER_EXPECTED_ACCOUNT=123456789012
 
 4. Optional — link to your tag policy docs in the HTML report:
-     export AWS_TAGCHECK_GUIDANCE_URL=https://example.com/your-tag-guide
+     export AWS_TAGMANAGER_GUIDANCE_URL=https://example.com/your-tag-guide
 
 5. Run either:
-     ./aws_tag_check.py
-     aws-tag-check
+     ./aws_tag_manager.py
+     aws-tag-manager
 
 The tool validates credentials and the expected account, loads
 canonical.json, scans EC2 instances in every accessible region (except
@@ -54,7 +54,7 @@ scan itself was clean, the run exits 4 so CI notices the missing report.
   0  scan finished, zero tag violations (HTML still written)
   1  scan finished, one or more Environment/Product tag violations (HTML written)
   2  credential failure (missing/invalid AWS credentials) — no HTML
-  3  account mismatch (caller is not AWS_TAGCHECK_EXPECTED_ACCOUNT) — no HTML
+  3  account mismatch (caller is not AWS_TAGMANAGER_EXPECTED_ACCOUNT) — no HTML
   4  config missing (expected account unset, bad canonical.json, unreadable
      --csv), or clean scan whose S3 upload failed (HTML written locally)
 

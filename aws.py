@@ -35,7 +35,7 @@ EXIT_ACCOUNT = 3
 EXIT_CONFIG = 4
 
 # Env var for the account guard
-EXPECTED_ACCOUNT_ENV = "AWS_TAGCHECK_EXPECTED_ACCOUNT"
+EXPECTED_ACCOUNT_ENV = "AWS_TAGMANAGER_EXPECTED_ACCOUNT"
 
 # Required tag keys and missing-value sentinels (legacy-friendly)
 REQUIRED_TAGS = (

@@ -1,4 +1,4 @@
-# Copilot instructions for AWS-TagCheck
+# Copilot instructions for AWS-TagManager
 
 Purpose: Short guidance for GitHub Copilot sessions working on this repo — focused on build/test/lint commands, the high-level architecture, and project-specific conventions Copilot should obey.
 
@@ -24,8 +24,8 @@ Purpose: Short guidance for GitHub Copilot sessions working on this repo — foc
 - Lint / static analysis:
   - ./static_analysis.sh            # runs pylint and pycodestyle on core modules
   - Or manually:
-    - pylint --rcfile pylintrc aws.py aws_tag_check.py
-    - pycodestyle --max-line-length=120 aws.py aws_tag_check.py
+    - pylint --rcfile pylintrc aws.py aws_tag_manager.py
+    - pycodestyle --max-line-length=120 aws.py aws_tag_manager.py
 
 - Notes: tox.ini holds pycodestyle/line-length config but no tox tasks are required by default.
 
@@ -34,18 +34,18 @@ Purpose: Short guidance for GitHub Copilot sessions working on this repo — foc
 ## High-level architecture (big picture)
 
 - Two primary Python modules:
-  - aws_tag_check.py — orchestration/CLI: loads canonical data, validates credentials/account, enumerates regions, aggregates violations, renders and writes index.html; exposes `main()` and can run as `./aws_tag_check.py` or installed console script `aws-tag-check`.
+  - aws_tag_manager.py — orchestration/CLI: loads canonical data, validates credentials/account, enumerates regions, aggregates violations, renders and writes index.html; exposes `main()` and can run as `./aws_tag_manager.py` or installed console script `aws-tag-manager`.
   - aws.py — AWS helpers: builds boto3.Session, validates credentials (STS), lists EC2 regions, paginates describe_instances, normalizes tags, and evaluates required tags.
 
 - Data / I/O:
   - canonical.json (expected at repo root) — must contain `Environment` and `Product` lists. The script exits with config error if missing or malformed.
-  - index.html — output HTML report written by aws_tag_check.py
+  - index.html — output HTML report written by aws_tag_manager.py
 
 - Important constants:
   - REQUIRED_TAGS = ("Environment","Product") — both checked and treated case-sensitively
   - DEFAULT_INSTANCE_FILTERS — default excludes terminated states
   - BAD_REGIONS — some regions are filtered out by default
-  - Entry point: `aws-tag-check = aws_tag_check:main` (pyproject)
+  - Entry point: `aws-tag-manager = aws_tag_manager:main` (pyproject)
 
 ---
 
@@ -53,8 +53,8 @@ Purpose: Short guidance for GitHub Copilot sessions working on this repo — foc
 
 - Tag matching is case-sensitive. Canonical lists must use the exact case expected by instances.
 - Required environment variables:
-  - AWS_TAGCHECK_EXPECTED_ACCOUNT — required; the tool refuses to run without it.
-  - AWS_TAGCHECK_GUIDANCE_URL — optional link that will be included in the HTML report.
+  - AWS_TAGMANAGER_EXPECTED_ACCOUNT — required; the tool refuses to run without it.
+  - AWS_TAGMANAGER_GUIDANCE_URL — optional link that will be included in the HTML report.
 
 - Exit-code semantics (useful for CI scripts):
   - 0 = OK (no violations)
@@ -63,7 +63,7 @@ Purpose: Short guidance for GitHub Copilot sessions working on this repo — foc
   - 3 = account mismatch
   - 4 = config missing / canonical.json error
 
-- Static analysis targets: static_analysis.sh intentionally lints only aws.py and aws_tag_check.py (project is small; extend targets only when adding modules).
+- Static analysis targets: static_analysis.sh intentionally lints only aws.py and aws_tag_manager.py (project is small; extend targets only when adding modules).
 
 - Tests assume canonical.json exists for the nominal-path tests. If adding or running tests in CI, ensure canonical.json is provided or tests are adjusted to use tmp files.
 
