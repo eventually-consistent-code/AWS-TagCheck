@@ -38,6 +38,7 @@ dev = [
 
 [project.scripts]
 aws-tag-manager = "aws_tag_manager:main"
+tagmanager-serve = "tagmanager.serve:main"
 
 [tool.setuptools]
 packages = ["tagmanager"]
