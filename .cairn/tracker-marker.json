@@ -170,8 +170,8 @@
         "milestone-4"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T11:15:21Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T11:19:07Z"
     },
     "27": {
       "title": "SMB/local filesystem scanner",
@@ -179,8 +179,9 @@
       "labels": [
         "milestone-4"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T09:11:39Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-07-31T11:19:15Z"
     },
     "28": {
       "title": "Access enrichment — last-READ signals where available",

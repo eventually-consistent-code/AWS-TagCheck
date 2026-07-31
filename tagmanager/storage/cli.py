@@ -27,6 +27,7 @@ from tagmanager.storage.tiering_gen import (TIERING_APPLY_NOTE,
 from tagmanager.storage.pricing import load_pricing
 from tagmanager.storage.projections import project_options
 from tagmanager.storage.azure_provider import AzureBlobStorageProvider
+from tagmanager.storage.fs_provider import FilesystemStorageProvider
 from tagmanager.storage.gcs_provider import GcsStorageProvider
 from tagmanager.storage.rollup import RollupBuilder, band_labels
 from tagmanager.storage.s3_provider import S3StorageProvider
@@ -66,8 +67,9 @@ def parse_args(argv):
         prog="tagmanager-storage-scan",
         description="Scan mass storage, band objects by age, report rollups.")
     parser.add_argument("--backend", default="s3",
-                        choices=["s3", "azure", "gcs"],
-                        help="storage backend to scan/analyze (default s3)")
+                        choices=["s3", "azure", "gcs", "fs"],
+                        help="storage backend to scan/analyze (default s3); "
+                             "fs treats --bucket as a root directory path")
     parser.add_argument("--account-url", default="",
                         help="azure backend: "
                              "https://<account>.blob.core.windows.net")
@@ -132,7 +134,7 @@ def scan_buckets(provider, buckets, prefix, builder, emitters=()):
                 for emitter in emitters:
                     emitter.offer(obj)
             LOG.info("%s complete...", bucket)
-        except (ClientError, BotoCoreError) as err:
+        except (ClientError, BotoCoreError, OSError) as err:
             LOG.warning("skipping %s: %s", bucket, err)
             skips.append({"container": bucket, "error": str(err)})
     return skips
@@ -572,18 +574,19 @@ def _post_scan_outputs(session, run, args):
     :param args: parsed CLI namespace
     :returns: exit code
     """
+    steps = []
     if args.cost_report:
-        _run_cost_report(session, run, args)
+        steps.append(_run_cost_report)
     if args.project_savings:
-        rc = _run_projections(session, run, args)
-        if rc:
-            return rc
+        steps.append(_run_projections)
     if args.emit_lifecycle:
-        rc = _emit_lifecycle(session, run, args)
+        steps.append(_emit_lifecycle)
+    if args.emit_tiering:
+        steps.append(_emit_tiering)
+    for step in steps:
+        rc = step(session, run, args)
         if rc:
             return rc
-    if args.emit_tiering:
-        return _emit_tiering(session, run, args)
     return 0
 
 
@@ -602,6 +605,8 @@ def _make_provider(args):
             return AzureBlobStorageProvider(args.account_url)
         if args.backend == "gcs":
             return GcsStorageProvider()
+        if args.backend == "fs":
+            return FilesystemStorageProvider()
         return S3StorageProvider()
     except RuntimeError as err:
         LOG.error("%s", err)
