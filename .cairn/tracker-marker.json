@@ -211,8 +211,17 @@
       "labels": [
         "cairn:bug"
       ],
+      "state": "closed",
+      "updatedAt": "2026-07-31T10:35:57Z"
+    },
+    "32": {
+      "title": "--age-out-map with unknown storage class crashes with UnknownStorageClass traceback instead of exit 4 (validation leak found in verify re-check)",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:bug"
+      ],
       "state": "open",
-      "updatedAt": "2026-07-31T10:32:50Z"
+      "updatedAt": "2026-07-31T10:38:30Z"
     }
   },
   "phases": {

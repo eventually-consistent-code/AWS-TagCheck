@@ -209,6 +209,8 @@ def test_cli_age_out_map_flag(tmp_path, monkeypatch):
                      "--age-out-map", "90=GLACIER_IR"]) == 0
     assert cli.main(["--project-savings", "--age-out-map", "banana"]) == 4
     assert cli.main(["--project-savings", "--age-out-map", "7=GLACIER"]) == 4
+    assert cli.main(["--project-savings", "--age-out-map", "90=BOGUS"]) == 4
+    assert cli.main(["--project-savings", "--age-out-map", "90=STANDARD"]) == 4
 
 
 def test_cli_project_savings_end_to_end(tmp_path, monkeypatch, capsys):

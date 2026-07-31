@@ -275,6 +275,11 @@ def _run_projections(session, run, args):
     pricing = load_pricing(provider="s3")
     try:
         band_targets = _parse_age_out_map(args.age_out_map)
+        for sclass in (band_targets or {}).values():
+            if not pricing.known_class(sclass) or sclass == "STANDARD":
+                raise ValueError(
+                    f"--age-out-map target {sclass!r} is not a valid "
+                    "lifecycle transition destination")
         projections = project_options(stats_for_run(session, run.id), pricing,
                                       run.age_band_days,
                                       band_targets=band_targets)
