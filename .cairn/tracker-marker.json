@@ -296,8 +296,8 @@
         "milestone-5"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-07-31T20:29:56Z"
+      "state": "closed",
+      "updatedAt": "2026-07-31T20:36:49Z"
     },
     "40": {
       "title": "Dry-run diff engine (apply-ladder rung one, zero writes)",
