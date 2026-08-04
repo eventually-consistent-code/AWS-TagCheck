@@ -19,7 +19,9 @@ It started life as an AWS EC2 tag checker (that CLI still works — see the [Tec
 - **JSON API** — `/api/resources`, `/api/violations`, `/api/scans`, `/api/health` for scripting and integration.
 - **OIDC auth** — plug in any OpenID Connect identity provider, or run wide open in dev mode. Unrecognized auth config fails closed, not open.
 - **Classic AWS CLI** — the original `aws-tag-manager` EC2 scanner still ships: HTML violation reports, CSV gold-list merge, S3 publishing, CI-friendly exit codes.
-- **Storage age & cost analysis** — scan S3 buckets into age-band rollups (last-modified vs your thresholds), price what stale data costs monthly, and project per-option savings (delete / age-out rules / intelligent tiering / archive) with break-even months and small-object honesty built in.
+- **Storage age & cost analysis** — scan S3, Azure Blob, GCS, or local/SMB into age-band rollups (last-modified vs your thresholds), price what stale data costs monthly, and project per-option savings (delete / age-out rules / intelligent tiering / archive) with break-even months and small-object honesty built in.
+- **Signal-driven recommendations** — fold in access logs and CloudTrail so "age" becomes last-**read**, not just last-modified, and per-prefix request rates surface hot prefixes near the S3 throughput ceiling. Layout recommendations (date-split, zone-split, compact-first, type-split, prefix-fanout, expire-in-place) each carry a **confidence** label and name the **evidence** they rest on — telemetry-backed advice grades high, an age-only guess grades low, so you always know how much to trust it.
+- **Read-only dry-run diff** — `--dry-run-diff` reads your live S3 lifecycle / intelligent-tiering config and shows, rule-by-rule, exactly what an apply would add, change, or **drop** — before you touch anything. Zero writes, guaranteed; output shaped for a future guarded apply.
 
 ## How it can be used
 
@@ -64,17 +66,23 @@ export AWS_TAGMANAGER_EXPECTED_ACCOUNT=123456789012
 Storage age & cost scan (S3, Azure Blob, GCS, or local/SMB via `--backend`):
 
 ```bash
-python -m tagmanager.storage.cli --bucket my-data-lake --age-bands 90,365
+python -m tagmanager.storage.cli --bucket my-data-lake --age-bands 90,365 \
+    --rollup-types --access-logs 'logs/*.log'
 python -m tagmanager.storage.cli --cost-report --project-savings --recommend-structure
+python -m tagmanager.storage.cli --dry-run-diff
 python -m tagmanager.storage.cli --emit-lifecycle out/ --html-report storage.html
 ```
 
 Scan once, then everything else works off the saved run — cost report,
-per-option savings, structure recommendations, generated artifacts
+per-option savings, confidence-labeled structure recommendations, a
+read-only `--dry-run-diff` of live vs generated config, generated artifacts
 (lifecycle configs, tiering configs, delete/batch-copy/move manifests via
-the `--emit-*` flags), and the one-page HTML report. The web UI gets a
-`/storage` page too. All figures are list-price estimates (refresh
-snapshots with `python -m tagmanager.storage.pricing_refresh`).
+the `--emit-*` flags), and the one-page HTML report. Fold in access logs
+(`--access-logs`) or CloudTrail (`--cloudtrail-logs`) to make ages
+access-aware and unlock the read/write-driven recommendations. The web UI
+gets a `/storage` page too. All figures are list-price estimates (refresh
+snapshots with `python -m tagmanager.storage.pricing_refresh`). Full flag
+reference in the [Technical Reference](docs/technical-reference.md).
 
 ## Documentation
 

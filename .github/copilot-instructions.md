@@ -33,7 +33,9 @@ Purpose: Short guidance for GitHub Copilot sessions working on this repo — foc
 
 ## High-level architecture (big picture)
 
-- Two primary Python modules:
+- The repo has grown past the classic CLI into a `tagmanager/` package: the multi-cloud tag-compliance platform (web UI + JSON API + scheduler, `tagmanager-serve`) and the storage optimizer (`tagmanager.storage`, console script `tagmanager-storage-scan` — age/cost/savings, signal-driven recommendations, and a read-only `--dry-run-diff`). Both are documented in [docs/technical-reference.md](../docs/technical-reference.md) and [docs/runbook.md](../docs/runbook.md); the classic AWS EC2 CLI described below still ships unchanged.
+
+- The classic CLI's two primary Python modules:
   - aws_tag_manager.py — orchestration/CLI: loads canonical data, validates credentials/account, enumerates regions, runs a single-pass scan that produces both the violation list and the per-instance tag map, optionally merges a desired-tags CSV into a gold list, renders and writes index.html, and optionally uploads artifacts to S3; exposes `main()` and can run as `./aws_tag_manager.py` or installed console script `aws-tag-manager`.
   - aws.py — AWS helpers: builds boto3.Session, validates credentials (STS), lists EC2 regions, paginates describe_instances, normalizes tags, evaluates required tags, parses tag CSVs (file or in-memory text), merges AWS/CSV tag maps (CSV wins on conflict, conflicts recorded), and S3 helpers (parse_s3_uri, read_s3_text, upload_file_to_s3).
 
@@ -70,7 +72,7 @@ Purpose: Short guidance for GitHub Copilot sessions working on this repo — foc
   - 3 = account mismatch
   - 4 = config missing / canonical.json error / unreadable --csv, or a clean scan whose S3 upload failed (report still written locally)
 
-- Static analysis targets: static_analysis.sh intentionally lints only aws.py and aws_tag_manager.py (project is small; extend targets only when adding modules).
+- Static analysis targets: static_analysis.sh lints `aws.py`, `aws_tag_manager.py`, and the `tagmanager` package (pylint 10.00 expected, pycodestyle max line length 120). Test files are intentionally outside the lint targets.
 
 - Tests assume canonical.json exists for the nominal-path tests. If adding or running tests in CI, ensure canonical.json is provided or tests are adjusted to use tmp files.
 

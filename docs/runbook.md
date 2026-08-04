@@ -104,7 +104,9 @@ A resource missing the key yields issue `missing`; present with a value outside 
 
 ## Storage Optimizer
 
-The storage side scans mass storage (S3, Azure Blob, GCS, local/SMB) for old and costly data, then generates lifecycle artifacts and layout recommendations. The image bundles every backend — no extra install.
+The storage side scans mass storage (S3, Azure Blob, GCS, local/SMB) for old and costly data, then generates lifecycle artifacts and layout recommendations. The image bundles every backend — no extra install. It is **read-only against the cloud**: it lists objects, reads config, emits files, and prints diffs — it never moves, deletes, or rewrites your data or config. You apply what it emits.
+
+Fold in local access logs (`--access-logs`) or CloudTrail data-event exports (`--cloudtrail-logs`) and object age becomes last-**read**, not just last-modified; the same telemetry drives per-prefix request-rate and write-churn signals that sharpen the recommendations (each carries a confidence label and its evidence). This is opt-in and parses only the files you point it at — the tool never enables logging or pulls events for you.
 
 ### Targets and scans (web)
 
@@ -112,7 +114,7 @@ Unlike tag scopes, storage targets have a UI. Go to **Storage → Targets**, add
 
 ### Credentials
 
-Storage backends read the same environment credentials as the tag scanner (AWS chain, `DefaultAzureCredential`, GCP application-default) — see [Cloud Credentials](#cloud-credentials). The storage read paths need list access: `s3:ListBucket` (+ `s3:GetObject` only if you fold in access logs), Azure `Storage Blob Data Reader`, GCS `storage.objects.list`. Azure last-access enrichment additionally needs last-access-time tracking enabled on the account.
+Storage backends read the same environment credentials as the tag scanner (AWS chain, `DefaultAzureCredential`, GCP application-default) — see [Cloud Credentials](#cloud-credentials). The storage read paths need list access: `s3:ListBucket` (+ `s3:GetObject` only if you fold in access logs), Azure `Storage Blob Data Reader`, GCS `storage.objects.list`. `--dry-run-diff` additionally needs `s3:GetLifecycleConfiguration` and `s3:GetIntelligentTieringConfiguration` (read-only). Azure last-access enrichment additionally needs last-access-time tracking enabled on the account.
 
 ### Artifacts volume
 
@@ -131,10 +133,15 @@ Everything the web app does (bar key-level manifests) is also a CLI, shipped in 
 ```bash
 docker compose exec app tagmanager-storage-scan --backend s3 --bucket my-lake --age-bands 90,365
 docker compose exec app tagmanager-storage-scan --cost-report --project-savings --recommend-structure
+docker compose exec app tagmanager-storage-scan --dry-run-diff
 docker compose exec app tagmanager-storage-scan --emit-lifecycle /data/artifacts/manual/
 ```
 
 On a bare install the identical console scripts are on `PATH` after `pip install .` — `tagmanager-serve`, `tagmanager-storage-scan`, and the classic `aws-tag-manager` EC2 scanner. Web app and CLI are the same service layer; neither is a second-class citizen.
+
+### Preview changes before applying (dry-run diff)
+
+Before you apply an emitted lifecycle / tiering config, `--dry-run-diff` (S3 only) reads the **live** bucket config and diffs it, rule-by-rule, against what the latest saved run would generate — read-only, zero writes. Watch for the loud **would-remove** lines: applying a lifecycle config REPLACES the bucket's entire rule set, so any live rule the tool doesn't generate (a hand-authored rule, say) would be dropped by an apply. "unknown — no permission" means the credentials can't read that bucket's config (needs `s3:GetLifecycleConfiguration` / `s3:GetIntelligentTieringConfiguration`), distinct from "no config present". The diff is the freshness signal — a clean diff means live already matches what a fresh scan would generate.
 
 ## Scan Lifecycle & Manual Runs
 

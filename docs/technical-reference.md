@@ -101,6 +101,107 @@ All platform settings load from environment variables with the `TAGMANAGER_` pre
 | `TAGMANAGER_SESSION_SECRET` | random per boot | secret key for signing session cookies. Unset is fine for a quick local run, but every restart invalidates all logged-in sessions — set it explicitly for anything long-lived so restarts/redeploys don't boot everyone out |
 | `TAGMANAGER_AWS_ROLE_<account_id>` | — | assume-role ARN for an AWS scope. For a Scope row with `cloud="aws"` and `scope_id="<account_id>"`, set this to the role ARN the scanner should assume in that account; e.g. `TAGMANAGER_AWS_ROLE_123456789012` sets the role for scope_id `123456789012`. Leave unset to use the default credential chain with no assume-role hop |
 
+## Storage optimizer CLI (`tagmanager-storage-scan`)
+
+The storage side is `python -m tagmanager.storage.cli` (console script
+`tagmanager-storage-scan` in the image / after `pip install .`). It scans
+mass storage into age-band rollups, prices what stale data costs, projects
+savings, recommends a better layout, emits ready-to-apply artifacts, and —
+new in v5 — reads access/write telemetry to sharpen those recommendations
+and diffs your live config against what it would generate. **Everything is
+read-only against the cloud.** Nothing here ever moves, deletes, or
+rewrites your data or config; the tool emits files and prints diffs, and
+you apply them.
+
+The model is scan-once, analyze-many: one scan saves a run to the database,
+and every other flag works off the latest saved run (so `--cost-report`,
+`--recommend-structure`, `--dry-run-diff`, and the `--emit-*` flags need no
+re-scan). Run without `--bucket` to work from the latest run.
+
+### Scan and scope
+
+| Flag | What it does |
+|------|--------------|
+| `--backend s3\|azure\|gcs\|fs` | storage backend (default `s3`); `fs` treats `--bucket` as a root directory path |
+| `--account-url URL` | Azure: `https://<account>.blob.core.windows.net` |
+| `--bucket NAME` | bucket / container to scan (repeatable; omit with an analysis flag to work from the latest run) |
+| `--prefix P` | only scan keys under this prefix |
+| `--age-bands 90,365` | comma-separated day thresholds for the age bands |
+| `--prefix-depth N` | path segments to roll prefixes up to |
+| `--rollup-owners` | also key rollup cells by object owner (cardinality cost; Azure/GCS record no owner) |
+| `--rollup-types` | also key cells by coarse data type (logs / media / archives / data / docs / other) from the key extension |
+| `--csv-out PATH` | write the rollup summary to CSV |
+
+### Access & write telemetry (sharpens ages and recommendations)
+
+By default an object's age is its `LastModified`. Fold in access logs and
+the age becomes access-aware — the newer of modified-or-**read** — and the
+recommendations gain read/write signals. All local-file parsing; the tool
+never enables logging or pulls events for you.
+
+| Flag | What it does |
+|------|--------------|
+| `--access-logs GLOB` | scan mode: local S3 server-access-log files to fold into a last-read index (ages become access-aware lower bounds; read + write ops feed request rates) |
+| `--cloudtrail-logs GLOB` | scan mode: local CloudTrail data-event log files (`.json`/`.json.gz`) for GetObject reads — merges into the same index. S3 data events are off by default and bill per event; this parses only what you exported |
+
+Request rates are **averages** over the sample window, never the peak the
+AWS per-prefix ceilings are measured against — the recommendation carries
+that caveat.
+
+### Analysis and recommendations
+
+| Flag | What it does |
+|------|--------------|
+| `--cost-report` / `--cost-csv PATH` | price the rollups with the shipped pricing snapshot |
+| `--project-savings` / `--savings-csv PATH` | project per-option savings (delete / age-out / intelligent-tiering / archive) for the stale slice, with break-even months |
+| `--recommend-structure` | derive per-prefix layout recommendations and persist them (date-split, zone-split, compact-first, type-split, prefix-fanout, expire-in-place) |
+| `--structure-csv PATH` | write the recommendations to CSV |
+
+Each recommendation carries a **confidence** label (high / medium / low)
+and the **evidence** it rests on — telemetry-backed advice (fan-out from
+request rates, expire-in-place from write rates, compact-first from the
+object-size distribution) grades high; an age-only cold-data recommendation
+grades low precisely so you can tell the difference. A prefix whose write
+telemetry shows churn on cold data gets an **expire-in-place** warning —
+transitioning churning data bills minimum-duration early-delete charges, so
+it advises a lifecycle Expiration in place over a transition.
+
+### Emit artifacts (you apply them)
+
+| Flag | What it does |
+|------|--------------|
+| `--emit-lifecycle DIR` | per-bucket lifecycle config JSON + `APPLY.md` (applying REPLACES the bucket's entire lifecycle config) |
+| `--delete-after DAYS` | add Expiration rules to `--emit-lifecycle` (the async, AWS-managed mass-delete path) |
+| `--emit-tiering DIR` | per-bucket Intelligent-Tiering configs + `APPLY.md` |
+| `--age-out-map 90=STANDARD_IA,365=DEEP_ARCHIVE` | override the age-out transition targets, keyed on threshold days |
+| `--emit-structure DIR` | `PROPOSAL.md` with suggested layouts + apply guidance |
+| `--emit-delete-manifests DIR` | scan mode: stream stale objects into chunked delete-objects JSON manifests |
+| `--emit-batch-copy DIR` | scan mode: stream stale objects into S3 Batch Operations copy manifests (CSV) |
+| `--emit-move-plan DIR` | scan mode: old-key,new-key move plans from the latest run's recommendations (two-pass: `--recommend-structure` first) |
+| `--html-report PATH` | one-page HTML insights report (age, cost, savings, structure, artifacts) |
+
+### Dry-run diff (apply-ladder rung one, zero writes)
+
+| Flag | What it does |
+|------|--------------|
+| `--dry-run-diff` | **S3 only.** Read the LIVE bucket lifecycle / intelligent-tiering config and diff it, rule-by-rule, against what the latest saved run would generate — read-only, zero writes |
+
+The diff is a whole-config **set diff by rule ID**, because applying a
+lifecycle config REPLACES the bucket's entire rule set. It classifies each
+rule as would-add, would-change, unchanged, or **would-remove** — a live
+rule you don't generate would be dropped by an apply, and that case is
+called out loudly. A config kind the run generates nothing for is reported
+as "not generated — an apply would not touch it" (never a false drop). No
+read permission on a bucket's config surfaces as "unknown — no permission",
+never conflated with "no config present". The output is shaped for a future
+guarded apply.
+
+### Exit codes
+
+`0` OK · `4` config error (nothing to do, no saved run to analyze,
+`--dry-run-diff` on a non-S3 backend, or key-level manifests requested
+without a scan).
+
 ## Dev: tests and lint
 
 ```bash
