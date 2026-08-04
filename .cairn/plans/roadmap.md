@@ -1,5 +1,5 @@
 ---
-milestone: 5
+milestone: 6
 ---
 # TagManager — Roadmap
 
@@ -83,3 +83,7 @@ Milestone 3: HTML compliance report shipped end-to-end — multi-region EC2 Envi
 ## Archived — v4
 
 Storage lifecycle optimizer shipped: multi-backend age scans (S3/Azure/GCS/filesystem) with access-aware aging, honest cost analysis and per-option savings projections, validated ready-to-apply artifacts (lifecycle configs, tiering configs, delete/batch-copy/move manifests), structure recommendations with two-pass move plans, and one-page HTML + web UI reporting. 186 tests, three adversarial verification rounds. — see milestones/v4/
+
+## Archived — v5
+
+TagManager became a signal-driven optimizer: data-type, read/write, and request-rate telemetry now feed recommendations that name their own confidence and evidence, and a read-only dry-run diff shows exactly what a lifecycle/tiering apply would change before anything is touched — all shipped as a containerized web app alongside the CLI. — see milestones/v5/
