@@ -7,9 +7,11 @@ Author(s): John Reed
 import logging
 
 import boto3
+from botocore.exceptions import ClientError
 
 from tagmanager.storage.base import (StorageCapabilities, StorageObject,
                                      StorageProvider)
+from tagmanager.storage.diff import FetchResult
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 LOG = logging.getLogger("root.s3_storage")
@@ -71,3 +73,71 @@ class S3StorageProvider(StorageProvider):
             supports_storage_class=True,
             supports_last_access=False,
         )
+
+    # Live-config reads for --dry-run-diff. READ-ONLY: only GET / list
+    # calls, never a Put/Delete — this is the apply ladder's rung one.
+
+    def fetch_lifecycle(self, bucket):
+        """
+        Read a bucket's live lifecycle configuration (read-only).
+
+        :param bucket: bucket name
+        :returns: FetchResult — rules present, or present=False on a 404
+            (NoSuchLifecycleConfiguration), or unknown=True on a 403
+            (AccessDenied — cannot tell drift).
+        """
+        client = self._session.client("s3")
+        try:
+            resp = client.get_bucket_lifecycle_configuration(Bucket=bucket)
+        except ClientError as err:
+            return _fetch_error(err)
+        return FetchResult(rules=resp.get("Rules", []), present=True)
+
+    def fetch_tiering(self, bucket):
+        """
+        Read a bucket's live Intelligent-Tiering configs (read-only).
+
+        Pages the list manually (no registered paginator); an empty list
+        means no live config, which is NOT an error.
+
+        :param bucket: bucket name
+        :returns: FetchResult — configs present, empty present=False, or
+            unknown=True on a 403.
+        """
+        client = self._session.client("s3")
+        configs = []
+        token = None
+        try:
+            while True:
+                kwargs = {"Bucket": bucket}
+                if token:
+                    kwargs["ContinuationToken"] = token
+                resp = client.list_bucket_intelligent_tiering_configurations(
+                    **kwargs)
+                configs.extend(
+                    resp.get("IntelligentTieringConfigurationList", []))
+                if not resp.get("IsTruncated"):
+                    break
+                token = resp.get("NextContinuationToken")
+        except ClientError as err:
+            return _fetch_error(err)
+        return FetchResult(rules=configs, present=bool(configs))
+
+
+def _fetch_error(err):
+    """
+    Map a botocore ClientError to a FetchResult — 404 empty vs 403 unknown.
+
+    A denied read (403) is unknown (we cannot tell drift), never conflated
+    with a genuinely absent config (404 / empty). Any other code re-raises.
+
+    :param err: the botocore ClientError
+    :returns: FetchResult
+    :raises ClientError: for codes other than the no-config / denied pair
+    """
+    code = err.response.get("Error", {}).get("Code", "")
+    if code == "NoSuchLifecycleConfiguration":
+        return FetchResult(rules=[], present=False)
+    if code == "AccessDenied":
+        return FetchResult(rules=[], present=False, unknown=True)
+    raise err
