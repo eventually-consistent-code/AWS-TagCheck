@@ -1,7 +1,8 @@
 ---
-status: open
+status: resolved
 issue: 48
 created: 2026-08-04
+resolved: 2026-08-04
 ---
 # Trace: Phase-5 dry-run-diff: false would-remove DROP warning when a bucket generates only one config kind (empty generated list for the other kind mis-classifies live rules as dropped); plus a KeyError crash when a live lifecycle rule omits the optional ID field.
 
@@ -21,3 +22,6 @@ Live smoke with an INTELLIGENT_TIERING-only object (lifecycle_gen skips it, tier
 
 ## verdict — 2026-08-04
 RESOLVED. Both defects from the phase-5 adversarial verify fixed and pinned by tests. Root cause was the diff engine conflating an empty generated side with "replace with nothing" (false would-remove DROP), plus assuming every rule carries its id key (KeyError on optional lifecycle ID). Fix: per-kind not-generated state + defensive id lookup. No read-only violation was ever involved — the read-only headline held throughout; these were classification/robustness bugs in the reporting.
+
+## resolution — 2026-08-04
+Fixed both phase-5 dry-run-diff defects: false would-remove DROP warning for an ungenerated config kind (diff_bucket now tracks per-kind not-generated state) and a KeyError crash on an ID-less live lifecycle rule (defensive id lookup in diff_rule_set). 3 regression tests; 281 pass; lint 10.00. Fix in commit 9b88f76.
