@@ -260,22 +260,28 @@ def _rule_summary(rule):
     return f"{prefix}  [{steps}]" if steps else prefix
 
 
-def _print_rule_set(label, rule_set, unknown, no_live, id_key):
+def _print_rule_set(label, rule_set, flags, id_key):
     """
     Render one config kind's diff for a bucket, rule-by-rule.
 
     :param label: "lifecycle" or "intelligent-tiering"
     :param rule_set: diff.RuleSetDiff or None
-    :param unknown: True on a 403 read (drift undeterminable)
-    :param no_live: True when no live config exists (404 / empty)
+    :param flags: dict — unknown / no_live / not_generated / untouched
     :param id_key: the rule identity field
     """
-    if unknown:
+    if flags["unknown"]:
         print(f"  {label}: unknown — no permission to read config (403); "
               "cannot tell drift")
         return
+    if flags["not_generated"]:
+        # An apply issues no Put for this kind — live rules stay untouched.
+        if flags["untouched"]:
+            print(f"  {label}: not generated — an apply would not touch it "
+                  f"({flags['untouched']} live rule(s) left as-is)")
+        return
     if rule_set is None:
         return
+    no_live = flags["no_live"]
     if not (rule_set.has_changes() or rule_set.unchanged):
         print(f"  {label}: no rules on either side")
         return
@@ -311,11 +317,16 @@ def print_config_diff(config_diff):
         return
     for bucket in config_diff.buckets:
         print(f"bucket: {bucket.bucket}")
-        _print_rule_set("lifecycle", bucket.lifecycle,
-                        bucket.unknown_lifecycle, bucket.no_live_lifecycle,
-                        "ID")
-        _print_rule_set("intelligent-tiering", bucket.tiering,
-                        bucket.unknown_tiering, bucket.no_live_tiering, "Id")
+        _print_rule_set("lifecycle", bucket.lifecycle, {
+            "unknown": bucket.unknown_lifecycle,
+            "no_live": bucket.no_live_lifecycle,
+            "not_generated": bucket.lifecycle_not_generated,
+            "untouched": bucket.untouched_lifecycle}, "ID")
+        _print_rule_set("intelligent-tiering", bucket.tiering, {
+            "unknown": bucket.unknown_tiering,
+            "no_live": bucket.no_live_tiering,
+            "not_generated": bucket.tiering_not_generated,
+            "untouched": bucket.untouched_tiering}, "Id")
     verdict = ("changes pending" if config_diff.has_changes()
                else "live already matches — no drift")
     print(f"read-only — nothing was written. this is what an apply WOULD "

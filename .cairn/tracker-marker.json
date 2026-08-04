@@ -306,8 +306,8 @@
         "milestone-5"
       ],
       "assignee": "eventually-consistent-code",
-      "state": "in_progress",
-      "updatedAt": "2026-08-04T10:25:04Z"
+      "state": "closed",
+      "updatedAt": "2026-08-04T10:33:42Z"
     },
     "41": {
       "title": "Storage service layer — decouple flows from argparse, CLI parity kept",
@@ -383,6 +383,15 @@
       "assignee": "eventually-consistent-code",
       "state": "closed",
       "updatedAt": "2026-07-31T15:05:32Z"
+    },
+    "48": {
+      "title": "Phase-5 dry-run-diff: false would-remove DROP warning when a bucket generates only one config kind (empty generated list for the other kind mis-classifies live rules as dropped); plus a KeyError crash when a live lifecycle rule omits the optional ID field.",
+      "bodyHash": "e3b0c44298fc1c14",
+      "labels": [
+        "cairn:bug"
+      ],
+      "state": "open",
+      "updatedAt": "2026-08-04T10:41:28Z"
     }
   },
   "phases": {

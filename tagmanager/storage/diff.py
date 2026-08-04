@@ -51,7 +51,7 @@ class RuleSetDiff:
 
 
 @dataclass
-class BucketDiff:
+class BucketDiff:  # pylint: disable=too-many-instance-attributes
     """Lifecycle + intelligent-tiering diff for one bucket."""
 
     bucket: str
@@ -61,6 +61,12 @@ class BucketDiff:
     no_live_lifecycle: bool = False
     unknown_tiering: bool = False
     no_live_tiering: bool = False
+    # A kind we generate NOTHING for: an apply issues no Put for it, so its
+    # live rules are left untouched — NEVER counted as would-remove.
+    lifecycle_not_generated: bool = False
+    tiering_not_generated: bool = False
+    untouched_lifecycle: int = 0
+    untouched_tiering: int = 0
 
     def has_changes(self):
         """True when either config kind would change under an apply."""
@@ -179,26 +185,31 @@ def diff_rule_set(generated, live, id_key, normalize):
     replaces the whole config); a shared ID whose normalized body differs
     WOULD BE REWRITTEN.
 
-    :param generated: list of rule dicts we would apply
-    :param live: list of live rule dicts
+    :param generated: list of rule dicts we would apply (our IDs — always set)
+    :param live: list of live rule dicts (ID is optional on lifecycle — an
+        ID-less live rule can't be correlated, so it reads as would-remove,
+        never a crash)
     :param id_key: the identity field ("ID" for lifecycle, "Id" for IT)
     :param normalize: the per-kind normalizer
     :returns: RuleSetDiff
     """
     gen_by_id = {rule[id_key]: rule for rule in generated}
-    live_by_id = {rule[id_key]: rule for rule in live}
     diff = RuleSetDiff()
-    for rid, grule in gen_by_id.items():
-        lrule = live_by_id.get(rid)
-        if lrule is None:
-            diff.would_add.append(grule)
-        elif normalize(grule) != normalize(lrule):
-            diff.would_change.append((grule, lrule))
+    matched = set()
+    for lrule in live:
+        lid = lrule.get(id_key)
+        grule = gen_by_id.get(lid) if lid is not None else None
+        if grule is None:
+            diff.would_remove.append(lrule)  # unmatched / ID-less live rule
         else:
-            diff.unchanged.append(grule)
-    for rid, lrule in live_by_id.items():
-        if rid not in gen_by_id:
-            diff.would_remove.append(lrule)
+            matched.add(lid)
+            if normalize(grule) != normalize(lrule):
+                diff.would_change.append((grule, lrule))
+            else:
+                diff.unchanged.append(grule)
+    for gid, grule in gen_by_id.items():
+        if gid not in matched:
+            diff.would_add.append(grule)
     return diff
 
 
@@ -217,6 +228,11 @@ def diff_bucket(bucket, generated_lifecycle, live_lifecycle,
     result = BucketDiff(bucket=bucket)
     if live_lifecycle.unknown:
         result.unknown_lifecycle = True
+    elif not generated_lifecycle:
+        # We generate no lifecycle for this bucket — an apply won't PUT
+        # lifecycle, so live rules stay put; never a would-remove.
+        result.lifecycle_not_generated = True
+        result.untouched_lifecycle = len(live_lifecycle.rules)
     else:
         result.no_live_lifecycle = not live_lifecycle.present
         result.lifecycle = diff_rule_set(
@@ -224,6 +240,9 @@ def diff_bucket(bucket, generated_lifecycle, live_lifecycle,
             normalize_lifecycle_rule)
     if live_tiering.unknown:
         result.unknown_tiering = True
+    elif not generated_tiering:
+        result.tiering_not_generated = True
+        result.untouched_tiering = len(live_tiering.rules)
     else:
         result.no_live_tiering = not live_tiering.present
         result.tiering = diff_rule_set(

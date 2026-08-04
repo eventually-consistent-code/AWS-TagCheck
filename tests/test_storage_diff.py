@@ -144,3 +144,31 @@ def test_diff_bucket_present_tiering_diffs():
     assert result.tiering is not None
     assert len(result.tiering.unchanged) == 1
     assert not result.has_changes()
+
+
+# regression: a kind we generate NOTHING for must not read as would-remove
+
+def test_ungenerated_kind_is_untouched_not_dropped():
+    """A bucket we generate only tiering for: its live LIFECYCLE rules are
+    left untouched by an apply — never a false would-remove/DROP."""
+    live_life = FetchResult(present=True, rules=[
+        {"ID": "customer-hand-rule", "Status": "Enabled",
+         "Prefix": "invoices/",
+         "Transitions": [{"Days": 30, "StorageClass": "GLACIER"}]}])
+    result = diff_bucket(
+        "bkt", [], live_life,                       # NO generated lifecycle
+        [_tier_cfg()], FetchResult(rules=[_tier_cfg()], present=True))
+    assert result.lifecycle_not_generated is True
+    assert result.untouched_lifecycle == 1
+    assert result.lifecycle is None                 # no diff -> no would-remove
+    assert not result.has_changes()                 # apply won't touch it
+
+
+def test_idless_live_lifecycle_rule_is_removed_not_crash():
+    """An ID-less live lifecycle rule can't correlate to a generated ID —
+    it reads as would-remove, never a KeyError."""
+    live = [{"Status": "Enabled", "Prefix": "misc/",
+             "Transitions": [{"Days": 30, "StorageClass": "STANDARD_IA"}]}]
+    diff = diff_rule_set([_gen_rule()], live, "ID", normalize_lifecycle_rule)
+    assert len(diff.would_remove) == 1
+    assert len(diff.would_add) == 1                 # our rule is still new

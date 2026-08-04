@@ -112,6 +112,23 @@ def test_dry_run_diff_no_run(tmp_path, monkeypatch):
     assert rc == 4  # no saved run
 
 
+def test_render_ungenerated_kind_no_false_drop(capsys):
+    """print_config_diff shows an ungenerated kind's live rules as left
+    as-is — the loud DROP warning must NOT fire for it."""
+    from tagmanager.storage.diff import (  # pylint: disable=import-outside-toplevel
+        BucketDiff, ConfigDiff)
+    from tagmanager.storage.output import (  # pylint: disable=import-outside-toplevel
+        print_config_diff)
+    diff = ConfigDiff(buckets=[BucketDiff(
+        bucket="bkt", lifecycle_not_generated=True, untouched_lifecycle=2,
+        tiering_not_generated=True, untouched_tiering=0)])
+    print_config_diff(diff)
+    out = capsys.readouterr().out
+    assert "not generated" in out
+    assert "left as-is" in out
+    assert "would DROP" not in out
+
+
 def test_service_backend_guard():
     """services.dry_run_diff refuses a non-S3 run (belt-and-suspenders)."""
     from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
