@@ -23,6 +23,7 @@ from tagmanager.storage.cloudtrail_log import (
 from tagmanager.storage.request_rate import estimate_rates, fold_rates
 from tagmanager.storage.azure_provider import AzureBlobStorageProvider
 from tagmanager.storage.cost import build_cost_report
+from tagmanager.storage.diff import ConfigDiff, diff_bucket
 from tagmanager.storage.fs_provider import FilesystemStorageProvider
 from tagmanager.storage.gcs_provider import GcsStorageProvider
 from tagmanager.storage.html_report import render_storage_report
@@ -632,6 +633,41 @@ def recommend_structure(session, run):
     persisted = len(run.structure_recs) - (1 if truncated else 0)
     return StructureResult(recs=recs, notes=notes, persisted=persisted,
                            truncated=truncated)
+
+
+def dry_run_diff(session, run, provider):
+    """
+    Diff live S3 config against what this run would generate — read-only.
+
+    Regenerates the lifecycle + intelligent-tiering configs in-memory from
+    the run and diffs them, per bucket, against the LIVE config fetched via
+    the provider's read-only GET/list calls. Writes nothing — the apply
+    ladder's rung one.
+
+    :param session: SQLAlchemy session
+    :param run: StorageScanRun
+    :param provider: an S3StorageProvider (fetch_lifecycle / fetch_tiering)
+    :returns: diff.ConfigDiff
+    :raises StorageServiceError: when the run is not an S3 backend
+    """
+    if run.backend != "s3":
+        raise StorageServiceError(
+            "dry-run-diff is S3 only — lifecycle / intelligent-tiering are "
+            f"S3 concepts (this run's backend is {run.backend})")
+
+    stats = stats_for_run(session, run.id)
+    generated_lifecycle, _ = build_lifecycle_configs(stats, run.age_band_days)
+    generated_tiering, _ = build_tiering_configs(stats, run.age_band_days)
+
+    buckets = sorted(set(generated_lifecycle) | set(generated_tiering))
+    bucket_diffs = []
+    for bucket in buckets:
+        life_rules = generated_lifecycle.get(bucket, {}).get("Rules", [])
+        tier_configs = generated_tiering.get(bucket, [])
+        bucket_diffs.append(diff_bucket(
+            bucket, life_rules, provider.fetch_lifecycle(bucket),
+            tier_configs, provider.fetch_tiering(bucket)))
+    return ConfigDiff(buckets=bucket_diffs)
 
 
 def emit_lifecycle_artifacts(session, run, out_dir, age_out_map_raw="",

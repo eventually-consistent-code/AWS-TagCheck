@@ -14,10 +14,12 @@ import sys
 from tagmanager.config import get_settings
 from tagmanager.models.tables import StorageScanRun
 from tagmanager.storage import services
-from tagmanager.storage.output import (print_cost_report, print_projections,
-                                       print_summary, write_cost_csv,
-                                       write_csv, write_savings_csv,
+from tagmanager.storage.output import (print_config_diff, print_cost_report,
+                                       print_projections, print_summary,
+                                       write_cost_csv, write_csv,
+                                       write_savings_csv,
                                        write_structure_proposal)
+from tagmanager.storage.s3_provider import S3StorageProvider
 from tagmanager.storage.store import latest_complete_run, record_artifact
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -117,6 +119,11 @@ def parse_args(argv):
                              "— merges into the same last-read index. S3 "
                              "data events are off by default and bill per "
                              "event; this parses only what you exported")
+    parser.add_argument("--dry-run-diff", action="store_true",
+                        help="S3 only: read the LIVE bucket lifecycle / "
+                             "intelligent-tiering config and diff it against "
+                             "what the latest saved run would generate — "
+                             "rule-by-rule, read-only, zero writes")
     return parser.parse_args(argv)
 
 
@@ -486,6 +493,33 @@ def _scan(settings, args, provider):
     return _post_scan_outputs(session, run, args)
 
 
+def _run_dry_run_diff(settings, args, provider):
+    """
+    Read-only dry-run diff of live S3 config vs the latest run's generated
+    config. No scan, no writes — the apply ladder's rung one.
+
+    :returns: exit code — 0 OK, 4 S3-only / no run / config error
+    """
+    if args.backend != "s3":
+        LOG.error("dry-run-diff is S3 only (backend is %s)", args.backend)
+        return 4
+    session = _open_session(settings)
+    if session is None:
+        return 4
+    run = latest_complete_run(session, backend="s3")
+    if run is None:
+        LOG.error("no saved s3 scan runs — scan first with --bucket")
+        return 4
+    try:
+        config_diff = services.dry_run_diff(
+            session, run, provider or S3StorageProvider())
+    except services.StorageServiceError as err:
+        LOG.error("%s", err)
+        return 4
+    print_config_diff(config_diff)
+    return 0
+
+
 def main(argv=None, provider=None):
     """
     Run the scan and/or cost report.
@@ -499,6 +533,9 @@ def main(argv=None, provider=None):
     """
     args = parse_args(argv)
     settings = get_settings()
+
+    if args.dry_run_diff:
+        return _run_dry_run_diff(settings, args, provider)
 
     if not args.bucket and not (args.cost_report or args.project_savings
                                 or args.emit_lifecycle or args.emit_tiering

@@ -8,7 +8,11 @@ Author(s): John Reed
 import csv
 import pathlib
 
+from tagmanager.storage.diff import _effective_prefix
 from tagmanager.storage.rollup import band_labels
+
+DROP_WARNING = ("live rule not in generated — an apply REPLACES the whole "
+                "config and would DROP it")
 
 
 def fmt_bytes(num):
@@ -241,3 +245,78 @@ def write_structure_proposal(directory, recs, notes, run):
         handle.write("\n".join(lines) + "\n")
     print(f"proposal saved to {out_dir}/.")
     return out_dir
+
+
+def _rule_summary(rule):
+    """A one-line summary of a lifecycle rule or IT config for the diff."""
+    prefix = _effective_prefix(rule) or "(whole bucket)"
+    trans = rule.get("Transitions") or rule.get("Tierings") or []
+    steps = ", ".join(
+        f"{t.get('Days', '?')}d->{t.get('StorageClass') or t.get('AccessTier')}"
+        for t in trans)
+    expiry = rule.get("Expiration", {})
+    if expiry.get("Days") is not None:
+        steps += f", expire {expiry['Days']}d"
+    return f"{prefix}  [{steps}]" if steps else prefix
+
+
+def _print_rule_set(label, rule_set, unknown, no_live, id_key):
+    """
+    Render one config kind's diff for a bucket, rule-by-rule.
+
+    :param label: "lifecycle" or "intelligent-tiering"
+    :param rule_set: diff.RuleSetDiff or None
+    :param unknown: True on a 403 read (drift undeterminable)
+    :param no_live: True when no live config exists (404 / empty)
+    :param id_key: the rule identity field
+    """
+    if unknown:
+        print(f"  {label}: unknown — no permission to read config (403); "
+              "cannot tell drift")
+        return
+    if rule_set is None:
+        return
+    if not (rule_set.has_changes() or rule_set.unchanged):
+        print(f"  {label}: no rules on either side")
+        return
+    if no_live:
+        print(f"  {label}: no live config — every generated rule would be "
+              "ADDED")
+    else:
+        print(f"  {label}:")
+    for rule in rule_set.would_add:
+        print(f"    + ADD     {rule[id_key]}  {_rule_summary(rule)}")
+    for generated, live in rule_set.would_change:
+        print(f"    ~ CHANGE  {generated[id_key]}")
+        print(f"        generated: {_rule_summary(generated)}")
+        print(f"        live:      {_rule_summary(live)}")
+    for rule in rule_set.would_remove:
+        print(f"    - REMOVE  {rule[id_key]}  ({DROP_WARNING})")
+    for rule in rule_set.unchanged:
+        print(f"    = same    {rule[id_key]}")
+
+
+def print_config_diff(config_diff):
+    """
+    Render a ConfigDiff to the console — read-only, apply-ladder rung one.
+
+    :param config_diff: diff.ConfigDiff
+    """
+    print("***********************************")
+    print("*  dry-run diff (read-only)       *")
+    print("***********************************")
+    if not config_diff.buckets:
+        print("no generated config for any bucket — an apply would change "
+              "nothing (did you run a scan first?).")
+        return
+    for bucket in config_diff.buckets:
+        print(f"bucket: {bucket.bucket}")
+        _print_rule_set("lifecycle", bucket.lifecycle,
+                        bucket.unknown_lifecycle, bucket.no_live_lifecycle,
+                        "ID")
+        _print_rule_set("intelligent-tiering", bucket.tiering,
+                        bucket.unknown_tiering, bucket.no_live_tiering, "Id")
+    verdict = ("changes pending" if config_diff.has_changes()
+               else "live already matches — no drift")
+    print(f"read-only — nothing was written. this is what an apply WOULD "
+          f"do ({verdict}).")

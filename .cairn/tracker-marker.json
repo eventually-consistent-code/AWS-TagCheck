@@ -305,8 +305,9 @@
       "labels": [
         "milestone-5"
       ],
-      "state": "open",
-      "updatedAt": "2026-07-31T12:44:18Z"
+      "assignee": "eventually-consistent-code",
+      "state": "in_progress",
+      "updatedAt": "2026-08-04T10:25:04Z"
     },
     "41": {
       "title": "Storage service layer — decouple flows from argparse, CLI parity kept",
